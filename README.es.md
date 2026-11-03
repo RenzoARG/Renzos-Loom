@@ -2,11 +2,9 @@
 
 Agente de coding con pestañas, contexto persistente y soporte de imágenes, usando OpenRouter como proveedor.
 
-> 🌐 [English](README.md) · [Español](README.es.md)
-
-## El tono
-
 > *¿Te la pasás usando agentes gratuitos porque no tenés un centavo partido a la mitad? Usá Renzo's Loom para no perder el hilo de la conversación!!!*
+
+> 🌐 [English](README.md) · [Español](README.es.md)
 
 ## Instalación
 
@@ -38,7 +36,7 @@ el ícono del `.exe` solo cambia al empaquetar (por ejemplo con electron-builder
 
 ## Soporte
 
-> *Hubiera puesto un link para aceptar donaciones, porque algún día quiero pagar por mis tokens con mis ideas.*
+> *Hubiera puesto un medio de donaciones, pero era demasiado esfuerzo.*
 
 Si querés apoyar el proyecto, en el futuro puede aparecer un link de donación acá.
 

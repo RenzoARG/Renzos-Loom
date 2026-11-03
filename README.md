@@ -2,11 +2,9 @@
 
 Coding agent with tabs, persistent context and image support, using OpenRouter as the provider.
 
-> 🌐 [English](README.md) · [Español](README.es.md)
-
-## The pitch
-
 > *Are you stuck using free agents because you don't have a dime to spare? Use Renzo's Loom so you never lose the thread of the conversation!!!*
+
+> 🌐 [English](README.md) · [Español](README.es.md)
 
 ## Installation
 
@@ -38,7 +36,7 @@ the `.exe` icon only changes when packaging (for example with electron-builder, 
 
 ## Support
 
-> *I would've added a donation link, because someday I want to pay for my tokens with my ideas.*
+> *I would've set up a donation method, but it was too much effort.*
 
 If you'd like to support the project, a donation link may appear here in the future.
 
