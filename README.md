@@ -1,28 +1,45 @@
 # Renzo's Loom
-Agente de coding con pestañas, contexto persistente y soporte de imágenes, usando OpenRouter como proveedor.
 
-## Instalación
-1. Copiá `.env.example` a `.env` y poné tu API key de OpenRouter (`OPENROUTER_API_KEY`).
-2. `npm install`
-3. `npm start`
+Coding agent with tabs, persistent context and image support, using OpenRouter as the provider.
 
-## Uso
-- **Pestañas**: cada pestaña es una conversación independiente, con su propio historial y su propio modelo.
-  `+` o `Ctrl+T` crea una nueva, `Ctrl+W` la cierra, `Ctrl+Tab` cambia de pestaña.
-  **Doble clic en el nombre para renombrarla.** Si no la renombrás, toma el nombre del primer mensaje.
-- Varias pestañas pueden estar respondiendo al mismo tiempo (punto naranja = respondiendo, punto azul = respuesta sin leer).
-- **Cerrar una pestaña no la borra**: queda en 🗂️ *Conversaciones guardadas*, desde donde se reabre o se borra.
-  Al abrir la app vuelven las pestañas que tenías abiertas.
-- **Modelos**: el selector del sidebar cambia el modelo de la pestaña activa. Filtros *Solo con visión* y *Solo gratis*.
-  Íconos: 🔧 tools · 👁️ visión · 🎤 audio · 🧠 razonamiento · 💰 gratis.
-- **Adjuntos**: 📎, arrastrar y soltar, o pegar con `Ctrl+V`. Imágenes y PDF viajan como adjuntos reales;
-  el código/texto se inserta en el mensaje. Si adjuntás una imagen y el modelo no tiene visión,
-  la pestaña cambia sola a uno que sí.
-- El agente usa herramientas (leer/escribir archivos, ejecutar comandos, buscar).
-- Todo se guarda en `sessions/` (un JSON por conversación; las imágenes en `<id>.assets/`).
+> 🌐 [English](README.md) · [Español](README.es.md)
 
-## Ícono
-`src/assets/icon.png` y `src/assets/icon.ico`. Al correr con `npm start` cambia el ícono de la ventana y de la barra de tareas;
-el ícono del `.exe` solo cambia al empaquetar (por ejemplo con electron-builder, usando `src/assets/icon.ico`).
+## The pitch
 
-Detalles técnicos para quien toque el código: `src/NOTES.md`.
+> *Are you stuck using free agents because you don't have a dime to spare? Use Renzo's Loom so you never lose the thread of the conversation!!!*
+
+## Installation
+
+1. `npm install`
+2. `npm start`
+3. When the app opens, click ⚙️ (Settings) and paste your OpenRouter API key. It is stored locally (no `.env` needed).
+   - (Optional, legacy) You can still use `.env` with `OPENROUTER_API_KEY` and `MODEL`.
+
+## Usage
+
+- **Tabs**: each tab is an independent conversation, with its own history and its own model.
+  `+` or `Ctrl+T` creates a new one, `Ctrl+W` closes it, `Ctrl+Tab` switches tabs.
+  **Double-click the tab name to rename it.** If you don't rename it, it takes the name of the first message.
+- Several tabs can be responding at the same time (orange dot = responding, blue dot = unread reply).
+- **Closing a tab doesn't delete it**: it goes to 🗂️ *Saved conversations*, from where it can be reopened or deleted.
+  When you reopen the app, the tabs you had open come back.
+- **Models**: the sidebar selector changes the model of the active tab. Filters *Vision only* and *Free only*.
+  Icons: 🔧 tools · 👁️ vision · 🎤 audio · 🧠 reasoning · 💰 free.
+- **Attachments**: 📎, drag & drop, or paste with `Ctrl+V`. Images and PDFs travel as real attachments;
+  code/text is inserted into the message. If you attach an image and the model has no vision,
+  the tab switches by itself to one that does.
+- The agent uses tools (read/write files, run commands, search text).
+- Everything is saved in `sessions/` (one JSON per conversation; images in `<id>.assets/`).
+
+## Icon
+
+`src/assets/icon.png` and `src/assets/icon.ico`. When running with `npm start` the window and taskbar icon change;
+the `.exe` icon only changes when packaging (for example with electron-builder, using `src/assets/icon.ico`).
+
+## Support
+
+> *I would've added a donation link, because someday I want to pay for my tokens with my ideas.*
+
+If you'd like to support the project, a donation link may appear here in the future.
+
+Technical details for anyone touching the code: `src/NOTES.md`.
