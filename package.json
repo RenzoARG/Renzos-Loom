@@ -1,0 +1,22 @@
+{
+  "name": "renzos-loom",
+  "productName": "Renzo's Loom",
+  "version": "0.2.0",
+  "description": "Renzo's Loom: agente de coding con pestañas, contexto persistente y modelos con visión vía OpenRouter (Electron)",
+  "main": "src/main/main.js",
+  "type": "module",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "dependencies": {
+    "openai": "^4.0.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}

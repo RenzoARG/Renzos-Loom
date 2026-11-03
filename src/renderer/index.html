@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Renzo's Loom</title>
+  <style>
+    :root {
+      --bg: #0e1320; --panel: #0a0e18; --surface: #172033; --surface-2: #1d2740; --line: #252f49;
+      --text: #e6eaf2; --muted: #8b96ae; --blue: #2f86d6; --green: #3fae5e; --orange: #f08a24;
+      --thread: linear-gradient(90deg, var(--blue), var(--green), var(--orange));
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+    button, select, input, textarea { font-family: inherit; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+
+    /* barra lateral */
+    .sidebar { width: 232px; background: var(--panel); padding: 14px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .brand img { width: 34px; height: 34px; border-radius: 8px; }
+    .brand h1 { font-size: 15px; font-weight: 650; letter-spacing: .1px; }
+    .field-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .sidebar button { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; font-size: 12px; text-align: left; }
+    .sidebar button:hover { background: var(--surface-2); }
+    .sidebar select { width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 11px; }
+    #model-id { font-size: 10px; line-height: 1.35; color: var(--muted); word-break: break-all; }
+    .chk { font-size: 11px; color: #b5bdd0; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    #status { font-size: 11px; color: var(--muted); }
+
+    /* pestañas */
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+    .tabbar { display: flex; align-items: stretch; background: var(--panel); border-bottom: 1px solid var(--line); min-height: 40px; }
+    #tabs { display: flex; overflow-x: auto; scrollbar-width: thin; min-width: 0; gap: 2px; flex: 1 1 auto; }
+    .tab { position: relative; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; min-width: 90px; max-width: 220px; font-size: 12px; color: var(--muted); border-right: 1px solid var(--line); cursor: pointer; user-select: none; flex-shrink: 0; overflow: hidden; }
+    .tab:hover { background: var(--surface); color: var(--text); }
+    .tab.active { background: var(--bg); color: var(--text); }
+    .tab.active::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--thread); }
+    .tab .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tab .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: none; }
+    .tab.busy .dot { display: block; background: var(--orange); animation: pulse 1.1s ease-in-out infinite; }
+    .tab.unread:not(.busy) .dot { display: block; background: var(--blue); }
+    .tab .x { width: 20px; height: 20px; border: none; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; line-height: 1; opacity: 0; flex-shrink: 0; }
+    .tab:hover .x, .tab.active .x, .tab .x:focus-visible { opacity: 1; }
+    .tab .x:hover { background: var(--line); color: var(--text); }
+    .tab input.rename { flex: 1; min-width: 0; width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--blue); border-radius: 4px; padding: 3px 5px; font-size: 12px; }
+    #new-tab { width: 40px; border: none; background: transparent; color: var(--muted); font-size: 16px; cursor: pointer; flex-shrink: 0; }
+    #new-tab:hover { background: var(--surface); color: var(--text); }
+    /* Botón configuración como pestaña con engranaje */
+    #config-tab { width: 40px; border: none; background: transparent; color: var(--muted); font-size: 16px; cursor: pointer; flex-shrink: 0; margin-left: 4px; }
+    #config-tab:hover { background: var(--surface); color: var(--text); }
+    #config-tab.active { background: var(--bg); color: var(--text); }
+    @keyframes pulse { 50% { opacity: .35; } }
+    @media (prefers-reduced-motion: reduce) { .tab.busy .dot { animation: none; } }
+
+    /* chat */
+    #chats { flex: 1; min-height: 0; display: flex; }
+    .chat { flex: 1; overflow-y: auto; padding: 16px; display: none; flex-direction: column; gap: 12px; }
+    .chat.active { display: flex; }
+    .msg { padding: 10px 14px; border-radius: 8px; max-width: 85%; white-space: pre-wrap; word-wrap: break-word; font-size: 13px; line-height: 1.5; }
+    .msg.user { background: var(--surface-2); align-self: flex-end; }
+    .msg.assistant { background: var(--surface); align-self: flex-start; border: 1px solid var(--line); }
+    .msg.tool { background: transparent; border: 1px solid var(--line); font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 11px; color: var(--muted); align-self: flex-start; max-width: 95%; }
+  .msg.system { background: transparent; border: 1px dashed var(--line); font-size: 11px; color: var(--muted); align-self: center; max-width: 90%; text-align: center; }
+    .msg.error { background: #2a1519; border: 1px solid #5c2a31; align-self: flex-start; }
+    .empty { margin: auto; color: var(--muted); font-size: 13px; text-align: center; }
+
+    /* entrada */
+    #attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px; }
+    #attachments:not(:empty) { padding-top: 8px; }
+    .chip { font-size: 11px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px 10px; }
+    .chip button { background: none; border: none; color: var(--muted); cursor: pointer; margin-left: 4px; padding: 0; }
+    .input-bar { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: var(--panel); }
+    .input-bar textarea { flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); resize: none; font-size: 13px; }
+    .input-bar button { padding: 10px 18px; border: none; border-radius: 6px; background: var(--blue); color: #fff; cursor: pointer; font-size: 13px; }
+    .input-bar button:hover:not(:disabled) { background: #3b93e6; }
+    .input-bar button:disabled { opacity: .4; cursor: not-allowed; }
+    .drop-zone { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(14, 19, 32, .88); border: 2px dashed var(--blue); color: var(--blue); font-size: 15px; pointer-events: none; z-index: 5; }
+    .drop-zone.active { display: flex; }
+
+    /* conversaciones guardadas */
+    .modal { position: fixed; inset: 0; background: rgba(5, 8, 14, .7); display: flex; align-items: center; justify-content: center; z-index: 10; }
+    .modal[hidden] { display: none; }
+    .dialog { width: min(560px, 90vw); max-height: 70vh; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+    .dialog header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    .dialog h2 { font-size: 14px; font-weight: 650; }
+    .dialog header button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 4px 8px; border-radius: 4px; }
+    .dialog header button:hover { background: var(--surface); color: var(--text); }
+    #saved-list { list-style: none; overflow-y: auto; padding: 6px; }
+    #saved-list li { display: flex; align-items: center; gap: 8px; border-radius: 6px; }
+    #saved-list li:hover { background: var(--surface); }
+    #saved-list .open { flex: 1; min-width: 0; text-align: left; background: none; border: none; color: var(--text); cursor: pointer; padding: 9px 10px; }
+    #saved-list .name { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #saved-list .meta { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #saved-list .del { background: none; border: none; color: var(--muted); cursor: pointer; padding: 8px 10px; border-radius: 4px; font-size: 12px; }
+    #saved-list .del:hover { background: #2a1519; color: #ff8a8a; }
+    #saved-empty { padding: 28px 16px; text-align: center; color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="../assets/icon.png" alt="" />
+      <h1 data-i18n="appName">Renzo's Loom</h1>
+    </div>
+    <label class="field-label" for="model-select" data-i18n="modelSelector">Modelo de esta conversación</label>
+    <select id="model-select"></select>
+    <div id="model-id" title="Modelo de esta conversación"></div>
+    <label class="chk"><input type="checkbox" id="filter-vision" data-i18n="visionModels"> 👁️ Solo con visión</label>
+    <label class="chk"><input type="checkbox" id="filter-free" checked data-i18n="freeModels"> 💰 Solo gratis</label>
+    <button id="pick-file" data-i18n="attachFile">📎 Adjuntar archivo</button>
+    <button id="pick-folder" data-i18n="openFolder">📁 Abrir carpeta</button>
+    <button id="open-saved" data-i18n="savedSessions">🗂️ Conversaciones guardadas</button>
+    <div style="flex:1"></div>
+    <div id="status">Listo</div>
+  </aside>
+
+  <section class="main">
+    <div class="tabbar">
+      <div id="tabs" role="tablist" aria-label="Conversaciones"></div>
+      <button id="new-tab" title="Nueva conversación (Ctrl+T)" aria-label="Nueva conversación">+</button>
+      <button id="config-tab" title="Configuración" aria-label="Configuración">⚙️</button>
+    </div>
+    <div id="chats"></div>
+    <div id="attachments"></div>
+    <div id="input-bar" class="input-bar">
+      <textarea id="input" rows="2" data-i18n-placeholder="inputPlaceholder" placeholder="Escribí tu mensaje..."></textarea>
+      <button id="send" data-i18n="send">Enviar</button>
+    </div>
+    <div class="drop-zone" id="drop-zone">Soltá archivos para adjuntarlos</div>
+  </section>
+
+  <div class="modal" id="saved-modal" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="saved-title">
+      <header><h2 id="saved-title">Conversaciones guardadas</h2><button id="saved-close" aria-label="Cerrar">✕</button></header>
+      <ul id="saved-list"></ul>
+      <p id="saved-empty" hidden>No hay conversaciones guardadas. Las pestañas que cierres aparecen acá.</p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

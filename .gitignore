@@ -1,0 +1,30 @@
+# Dependencias
+node_modules/
+
+# Sesiones y datos locales del usuario
+sessions/
+
+# Claves de API (no commitear nunca)
+.env
+.env.local
+.env.*.local
+
+# Build / empaquetado
+dist/
+out/
+build/
+*.asar
+
+# Logs
+npm-debug.log*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores
+.vscode/
+.idea/
+*.swp
