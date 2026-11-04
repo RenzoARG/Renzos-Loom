@@ -25,7 +25,23 @@
     .sidebar select { width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 11px; }
     #model-id { font-size: 10px; line-height: 1.35; color: var(--muted); word-break: break-all; }
     .chk { font-size: 11px; color: #b5bdd0; display: flex; align-items: center; gap: 6px; cursor: pointer; }
-    #status { font-size: 11px; color: var(--muted); }
+    #status { font-size: 11px; color: var(--muted); flex: 1 1 auto; min-width: 0; }
+    .statusrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
+    #ctx { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 2px 8px; font-variant-numeric: tabular-nums; cursor: default; white-space: nowrap; }
+    #ctx.warn { color: var(--orange); border-color: var(--orange); }
+    #ctx.crit { color: #ff8a8a; border-color: #5c2a31; background: #2a1519; }
+    .msg.log { background: transparent; border: none; padding: 0 14px; margin-top: -8px; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 10.5px; color: var(--muted); align-self: flex-start; max-width: 95%; opacity: .85; }
+    .msg.log.warn { color: var(--orange); opacity: 1; }
+    body:not(.verbose) .msg.log { display: none; }
+    #activity { display: none; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 7px 16px; border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; color: var(--text); }
+    #activity.on { display: flex; }
+    #activity .hint { color: var(--muted); font-size: 11px; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    #activity .time { font-variant-numeric: tabular-nums; color: var(--muted); }
+    #activity .alert { flex-basis: 100%; font-size: 11px; }
+    #activity.warn { color: var(--orange); }
+    #activity.crit { background: #2a1519; color: #ff8a8a; }
+    .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; }
+    #model-count { font-size: 10px; color: var(--muted); }
 
     /* pestañas */
     .main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
@@ -74,6 +90,8 @@
     .input-bar button { padding: 10px 18px; border: none; border-radius: 6px; background: var(--blue); color: #fff; cursor: pointer; font-size: 13px; }
     .input-bar button:hover:not(:disabled) { background: #3b93e6; }
     .input-bar button:disabled { opacity: .4; cursor: not-allowed; }
+    .input-bar button.stop { background: #c0392b; min-width: 104px; }
+    .input-bar button.stop:hover:not(:disabled) { background: #d6453a; }
     .drop-zone { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(14, 19, 32, .88); border: 2px dashed var(--blue); color: var(--blue); font-size: 15px; pointer-events: none; z-index: 5; }
     .drop-zone.active { display: flex; }
 
@@ -105,13 +123,24 @@
     <label class="field-label" for="model-select" data-i18n="modelSelector">Modelo de esta conversación</label>
     <select id="model-select"></select>
     <div id="model-id" title="Modelo de esta conversación"></div>
-    <label class="chk"><input type="checkbox" id="filter-vision" data-i18n="visionModels"> 👁️ Solo con visión</label>
-    <label class="chk"><input type="checkbox" id="filter-free" checked data-i18n="freeModels"> 💰 Solo gratis</label>
+    <div class="field-label">Filtrar por prestación <span id="model-count"></span></div>
+    <div class="filters">
+      <label class="chk" title="Acepta imágenes"><input type="checkbox" id="filter-vision"> 👁️ <span data-i18n="fVision">Visión</span></label>
+      <label class="chk" title="Acepta audio"><input type="checkbox" id="filter-audio"> 🎤 <span data-i18n="fAudio">Audio</span></label>
+      <label class="chk" title="Modelos con razonamiento (thinking)"><input type="checkbox" id="filter-reasoning"> 🧠 <span data-i18n="fReasoning">Razona</span></label>
+      <label class="chk" title="Acepta PDF de forma nativa"><input type="checkbox" id="filter-files"> 📄 <span data-i18n="fFiles">PDF</span></label>
+      <label class="chk" title="Búsqueda web nativa del proveedor"><input type="checkbox" id="filter-web"> 🌐 <span data-i18n="fWeb">Internet</span></label>
+      <label class="chk" title="Sin costo por token"><input type="checkbox" id="filter-free" checked> 💰 <span data-i18n="fFree">Gratis</span></label>
+    </div>
     <button id="pick-file" data-i18n="attachFile">📎 Adjuntar archivo</button>
     <button id="pick-folder" data-i18n="openFolder">📁 Abrir carpeta</button>
     <button id="open-saved" data-i18n="savedSessions">🗂️ Conversaciones guardadas</button>
+    <label class="chk" title="Muestra en el chat cada paso: tiempos, reintentos y herramientas"><input type="checkbox" id="verbose" checked> 🔍 <span data-i18n="verbose">Detalle de pasos</span></label>
     <div style="flex:1"></div>
-    <div id="status">Listo</div>
+    <div class="statusrow">
+      <div id="status">Listo</div>
+      <div id="ctx" title="Contexto usado / máximo del modelo">–</div>
+    </div>
   </aside>
 
   <section class="main">
@@ -121,10 +150,11 @@
       <button id="config-tab" title="Configuración" aria-label="Configuración">⚙️</button>
     </div>
     <div id="chats"></div>
+    <div id="activity" role="status" aria-live="off"></div>
     <div id="attachments"></div>
     <div id="input-bar" class="input-bar">
       <textarea id="input" rows="2" data-i18n-placeholder="inputPlaceholder" placeholder="Escribí tu mensaje..."></textarea>
-      <button id="send" data-i18n="send">Enviar</button>
+      <button id="send">Enviar</button>
     </div>
     <div class="drop-zone" id="drop-zone">Soltá archivos para adjuntarlos</div>
   </section>

@@ -7,6 +7,10 @@ const modelSelect = $("model-select");
 const statusEl = $("status");
 const filterVision = $("filter-vision");
 const filterFree = $("filter-free");
+const ctxEl = $("ctx");
+const activityEl = $("activity");
+// clave = propiedad booleana del modelo (ver getAvailableModels en main.js)
+const filterBoxes = { vision: filterVision, audio: $("filter-audio"), reasoning: $("filter-reasoning"), files: $("filter-files"), web: $("filter-web"), free: filterFree };
 const attachmentsEl = $("attachments");
 
 const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"];
@@ -22,6 +26,47 @@ const extOf = (n) => (n.lastIndexOf(".") >= 0 ? n.slice(n.lastIndexOf(".")).toLo
 const baseName = (p) => p.replace(/\\/g, "/").split("/").pop();
 const modelHasVision = (id) => allModels.find((m) => m.id === id)?.vision ?? true;
 function setStatus(msg) { statusEl.textContent = msg; }
+
+// ------------------------------------------------------------ contador de contexto (usado/máximo)
+const fmtTok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M"
+  : n >= 1e4 ? Math.round(n / 1000) + "k"
+  : n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n));
+function updateCtx() {
+  const tab = activeTab();
+  if (!tab) { ctxEl.textContent = "–"; return; }
+  const max = allModels.find((m) => m.id === tab.model)?.context || 0;
+  const used = tab.ctx || 0;
+  const pct = max ? used / max : 0;
+  ctxEl.textContent = (tab.ctxReal ? "" : "~") + fmtTok(used) + (max ? "/" + fmtTok(max) : "");
+  ctxEl.className = pct >= 0.95 ? "crit" : pct >= 0.8 ? "warn" : "";
+  ctxEl.title = `Contexto: ${used.toLocaleString()}${max ? " de " + max.toLocaleString() + " tokens (" + Math.round(pct * 100) + "%)" : " tokens"}${tab.ctxReal ? "" : " · estimado hasta la próxima respuesta"}`;
+}
+
+// ------------------------------------------------------------ actividad en vivo (qué hace el agente y hace cuánto)
+// El cronómetro corre en el renderer: sigue contando aunque el proceso principal esté ocupado o colgado.
+const fmtDur = (ms) => (ms < 10000 ? (ms / 1000).toFixed(1) + "s" : ms < 60000 ? Math.round(ms / 1000) + "s"
+  : `${Math.floor(ms / 60000)}m ${String(Math.round(ms / 1000) % 60).padStart(2, "0")}s`);
+function setActivity(tab, text, hint = "", slowAfter = 60, until = 0) {
+  tab.activity = { text, hint, since: Date.now(), slowAfter, until };
+  if (tab.id === activeId) renderActivity();
+}
+function renderActivity() {
+  const tab = activeTab();
+  if (!tab || !tab.busy || !tab.activity) { activityEl.className = ""; activityEl.textContent = ""; return; }
+  const a = tab.activity, now = Date.now(), el = now - a.since, slow = a.slowAfter * 1000;
+  const level = el > slow * 2 ? "crit" : el > slow ? "warn" : "";
+  const mk = (cls, text) => { const s = document.createElement("span"); s.className = cls; s.textContent = text; return s; };
+  const text = a.until ? a.text.replace("{s}", Math.max(0, Math.ceil((a.until - now) / 1000))) : a.text;
+  const parts = [mk("", "⏳ " + text), mk("time", fmtDur(el))];
+  if (a.hint) parts.push(mk("hint", a.hint));
+  if (tab.busySince) parts.push(mk("time", "total " + fmtDur(now - tab.busySince)));
+  if (level) parts.push(mk("alert", level === "crit"
+    ? `⚠ Lleva ${fmtDur(el)} sin avanzar: probablemente esté trabado. Podés cortarlo con ⏹ Detener (o Esc).`
+    : `⚠ Sin novedades hace ${fmtDur(el)}: puede estar lento o trabado.`));
+  activityEl.className = "on " + level;
+  activityEl.replaceChildren(...parts);
+}
+setInterval(renderActivity, 1000);
 
 // ------------------------------------------------------------ mensajes
 function addMessage(tab, role, text) {
@@ -47,7 +92,7 @@ function addTab(info) {
   el.className = "chat";
   el.setAttribute("role", "log");
   chatsEl.appendChild(el);
-  const tab = { id: info.id, name: info.name, model: info.model, busy: !!info.busy, unread: false, el, draft: "", attachments: [] };
+  const tab = { id: info.id, name: info.name, model: info.model, busy: !!info.busy, unread: false, el, draft: "", attachments: [], ctx: info.ctx || 0, ctxReal: !!info.ctxReal };
   tabs.set(tab.id, tab);
   order.push(tab.id);
   (info.messages || []).forEach((m) => addMessage(tab, m.role, m.text));
@@ -131,9 +176,25 @@ function startRename(id) {
   field.addEventListener("click", (e) => e.stopPropagation());
 }
 
+// Mientras la pestaña responde, "Enviar" pasa a ser un botón rojo "Detener".
+const tr = (key) => t(key);
 function updateSendState() {
   const t = activeTab();
-  sendBtn.disabled = !t || t.busy;
+  const busy = !!t?.busy;
+  sendBtn.disabled = !t || (busy && t.stopping);
+  sendBtn.classList.toggle("stop", busy);
+  sendBtn.textContent = busy ? "⏹ " + tr(t.stopping ? "stopping" : "stop") : tr("send");
+  sendBtn.title = busy ? "Cortar la respuesta o el comando en curso (Esc)" : "";
+}
+
+async function stopActive() {
+  const tab = activeTab();
+  if (!tab || !tab.busy || tab.stopping) return;
+  tab.stopping = true;
+  updateSendState();
+  setActivity(tab, "Deteniendo…", "", 15);
+  const ok = await window.loom.stopTab(tab.id);
+  if (!ok) { tab.stopping = false; updateSendState(); }
 }
 
 function activate(id, { notify = true } = {}) {
@@ -150,6 +211,7 @@ function activate(id, { notify = true } = {}) {
   renderAttachments();
   renderModelOptions();
   updateSendState();
+  renderActivity();
   setStatus(t.busy ? "Pensando..." : "Listo");
   if (notify) window.loom.activateTab(id);
   if (!editingId) input.focus();
@@ -224,6 +286,7 @@ function applyTranslations() {
     }
   });
   statusEl.textContent = t("ready");
+  updateSendState();
 }
 
 function saveLanguage(code) {
@@ -374,7 +437,7 @@ window.loom.onShortcut((action) => {
 });
 
 // ------------------------------------------------------------ modelos (por pestaña)
-const visibleModels = () => allModels.filter((m) => (!filterVision.checked || m.vision) && (!filterFree.checked || m.free));
+const visibleModels = () => allModels.filter((m) => Object.entries(filterBoxes).every(([k, el]) => !el.checked || m[k]));
 
 function renderModelOptions() {
   const t = activeTab();
@@ -397,6 +460,8 @@ function renderModelOptions() {
   });
   if (t) modelSelect.value = t.model;
   $("model-id").textContent = t ? t.model : "";
+  $("model-count").textContent = `(${list.length}/${allModels.length})`;
+  updateCtx();
 }
 
 async function changeModel(id) {
@@ -406,8 +471,10 @@ async function changeModel(id) {
   const newModel = (res && res.model) || res || id;
   t.model = newModel;
   if (res && res.handoffNote) addMessage(t, "system", res.handoffNote);
+  if (res && typeof res.ctx === "number") { t.ctx = res.ctx; t.ctxReal = !!res.ctxReal; }
   modelSelect.value = t.model;
   $("model-id").textContent = t.model;
+  updateCtx();
   renderTabs();
 }
 
@@ -417,8 +484,18 @@ modelSelect.addEventListener("change", async () => {
   setStatus("Modelo: " + t.model);
   if (t.attachments.some((a) => a.isImage) && !modelHasVision(t.model)) setStatus("⚠ Este modelo no tiene visión: las imágenes adjuntas darán error");
 });
-filterVision.addEventListener("change", renderModelOptions);
-filterFree.addEventListener("change", renderModelOptions);
+// Los filtros se recuerdan entre sesiones (ahora son varios y resetearlos cada vez molesta).
+const FILTER_KEY = "loomFilters";
+try {
+  const saved = JSON.parse(localStorage.getItem(FILTER_KEY) || "null");
+  if (saved) for (const k in filterBoxes) if (k in saved) filterBoxes[k].checked = !!saved[k];
+} catch { /* sin filtros guardados */ }
+for (const el of Object.values(filterBoxes)) {
+  el.addEventListener("change", () => {
+    renderModelOptions();
+    localStorage.setItem(FILTER_KEY, JSON.stringify(Object.fromEntries(Object.entries(filterBoxes).map(([k, b]) => [k, b.checked]))));
+  });
+}
 
 // Al adjuntar una imagen con un modelo sin visión, pasamos solos a uno que sí tenga (respetando "Solo gratis").
 async function ensureVisionModel() {
@@ -523,22 +600,27 @@ async function sendMessage() {
   updateSendState();
   setStatus("Pensando...");
 
+  tab.busySince = Date.now();
+  tab.stopping = false;
+  setActivity(tab, "Preparando el mensaje", "", 30);
   const res = await window.loom.sendMessage(tab.id, text, toSend);
-  if (res && res.ok === false && tab.busy) { tab.busy = false; renderTabs(); updateSendState(); }
+  if (res && res.ok === false && tab.busy) { tab.busy = false; tab.activity = null; renderTabs(); updateSendState(); renderActivity(); }
 }
 
-sendBtn.addEventListener("click", sendMessage);
+sendBtn.addEventListener("click", () => (activeTab()?.busy ? stopActive() : sendMessage()));
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  else if (e.key === "Escape" && activeTab()?.busy) { e.preventDefault(); stopActive(); }
 });
 
 // ------------------------------------------------------------ eventos del proceso principal (todos traen tabId)
 window.loom.onTabUpdated((info) => {
   const t = tabs.get(info.id);
   if (!t) return;
-  Object.assign(t, { name: info.name, model: info.model, busy: info.busy });
+  Object.assign(t, { name: info.name, model: info.model, busy: info.busy, ctx: info.ctx, ctxReal: info.ctxReal });
+  if (!info.busy) { t.activity = null; t.busySince = 0; t.stopping = false; }
   renderTabs();
-  if (info.id === activeId) { updateSendState(); if (!info.busy && statusEl.textContent === "Pensando...") setStatus("Listo"); }
+  if (info.id === activeId) { updateSendState(); updateCtx(); renderActivity(); if (!info.busy && statusEl.textContent === "Pensando...") setStatus("Listo"); }
 });
 
 window.loom.onAssistantMessage(({ tabId, text }) => {
@@ -546,6 +628,42 @@ window.loom.onAssistantMessage(({ tabId, text }) => {
   if (!t) return;
   addMessage(t, "assistant", text);
   if (tabId !== activeId) { t.unread = true; renderTabs(); } else setStatus("Listo");
+});
+
+// Pasos del agente: la barra de actividad muestra el paso actual; el chat guarda el registro (con "Detalle de pasos").
+const verboseBox = $("verbose");
+verboseBox.checked = localStorage.getItem("loomVerbose") !== "0";
+const applyVerbose = () => document.body.classList.toggle("verbose", verboseBox.checked);
+verboseBox.addEventListener("change", () => { localStorage.setItem("loomVerbose", verboseBox.checked ? "1" : "0"); applyVerbose(); });
+applyVerbose();
+
+window.loom.onProgress((p) => {
+  const t = tabs.get(p.tabId);
+  if (!t) return;
+  switch (p.kind) {
+    case "model-start":
+      setActivity(t, `Paso ${p.step} · esperando al modelo`, `${p.model} · contexto ~${fmtTok(p.ctx)}`, 90);
+      break;
+    case "model-done": {
+      const tok = p.promptTokens ? ` · ${fmtTok(p.promptTokens)} entrada + ${fmtTok(p.completionTokens || 0)} salida` : "";
+      const what = p.toolCalls ? `pide ${p.toolCalls} herramienta${p.toolCalls > 1 ? "s" : ""}` : "respuesta final";
+      addMessage(t, "log", `← Paso ${p.step}: el modelo respondió en ${fmtDur(p.ms)}${tok} · ${what}`);
+      break;
+    }
+    case "retry":
+      setActivity(t, `Paso ${p.step} · ${p.reason} · reintento ${p.attempt + 1}/${p.max} en {s}s`, "", 60, Date.now() + p.waitMs);
+      addMessage(t, "log warn", `⚠ Paso ${p.step}: ${p.reason}. Reintento ${p.attempt + 1}/${p.max} en ${Math.round(p.waitMs / 1000)}s.`);
+      break;
+    case "tool-start":
+      setActivity(t, `Paso ${p.step} · ejecutando ${p.name}`, p.summary, 45);
+      break;
+    case "stopped":
+      addMessage(t, "system", p.text);
+      break;
+    case "tool-done":
+      addMessage(t, p.ok ? "log" : "log warn", `${p.ok ? "✓" : "✗"} Paso ${p.step}: ${p.name} ${p.ok ? "terminó" : "falló"} en ${fmtDur(p.ms)}${p.chars ? ` · ${fmtTok(p.chars)} caracteres` : ""}`);
+      break;
+  }
 });
 
 window.loom.onToolCall(({ tabId, name, args }) => { const t = tabs.get(tabId); if (t) addMessage(t, "tool", `[tool] ${name} ${JSON.stringify(args)}`); });

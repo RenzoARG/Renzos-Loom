@@ -59,3 +59,44 @@ el `.ico` en Windows. El ícono del `.exe` solo cambia al empaquetar (ver README
 ## Ojo
 - El endpoint gratis de Inkling Small registra prompts e imágenes para entrenamiento y es solo para
   "agentic harnesses": no subas datos personales o confidenciales.
+
+## 4. Filtros por prestación y contador de contexto (v0.3.0)
+
+- `getAvailableModels()` marca cada modelo con booleanos: `vision`, `audio`, `files` (PDF), `reasoning`, `web`, `free`.
+  La UI arma los filtros con `filterBoxes` (la clave del objeto **es** el nombre de la propiedad del modelo):
+  para sumar una prestación nueva alcanza con el booleano en main.js + un checkbox + una entrada en `filterBoxes`.
+  Los filtros se guardan en `localStorage.loomFilters`.
+- `web` = búsqueda web **nativa** (`supported_parameters` con `web_search_options`, `pricing.web_search > 0` o `perplexity/*`).
+  El plugin `web` de OpenRouter (`:online`) funciona con cualquier modelo pero cuesta créditos; no se marca.
+  Ojo: la lista se limita a modelos con `tools`, y los de Perplexity (siempre buscan) no suelen soportarlas.
+- Contexto: `tab.usage = {tokens, hlen}` guarda `prompt_tokens + completion_tokens` de la última respuesta y el largo del
+  historial en ese momento. `tabCtx()` suma una estimación (chars/3.5, imagen ≈ 1000, PDF ≈ 2000) de lo agregado después.
+  Si no hay dato real (pestaña restaurada, rollback por error) todo es estimado y la UI muestra `~`.
+  Rojo/naranja al pasar 95 % / 80 % del máximo del modelo.
+
+## 5. Qué está haciendo el agente (v0.3.1)
+
+Para saber *dónde* se traba un turno hay un canal `progress` (main → renderer, lleva `tabId`):
+`model-start`, `model-done`, `retry`, `tool-start`, `tool-done`. La UI hace dos cosas con él:
+- **Barra de actividad** (`#activity`, sobre el input): paso actual + cronómetro + tiempo total. Pasa a naranja/rojo según
+  `slowAfter` (90 s modelo, 45 s tool). El cronómetro corre en el renderer, así que sigue aunque main esté bloqueado.
+- **Registro en el chat** (`.msg.log`, solo en memoria, no se guarda en la sesión). Se oculta con "Detalle de pasos".
+
+Reglas para no volver a romperlo:
+- `client` se crea con `maxRetries: 0`. Los reintentos (429/5xx/timeout, con espera 5/15/30 s o `Retry-After`) son de `callModel()`,
+  para que se vean. No volver a llamar `client.chat.completions.create` directo desde el ciclo.
+- OpenRouter a veces responde HTTP 200 con `{error}` (modelos gratis): `callModel()` lo convierte en error reintentable
+  en vez de caer en `resp.choices[0]` indefinido.
+- `bash` en main usa `runBashAsync()` (spawn, sin stdin, timeout 120 s, mata el árbol de procesos con `taskkill /T`).
+  `execSync` congelaba **todas** las pestañas mientras corría un comando. `executeTool("bash")` sigue existiendo solo para el CLI.
+
+## 6. Detener (v0.3.2)
+
+El botón "Enviar" pasa a ser "⏹ Detener" (rojo, también con Esc en el input) mientras la pestaña activa está `busy`.
+- Cada turno crea `tab.abort = new AbortController()`. Su `signal` llega a la request del modelo (`callModel`), a la espera
+  entre reintentos (`sleep`) y a `runBashAsync` (mata el árbol de procesos). `stop-tab` pone `tab.stopped = true` y aborta.
+- **Detener no hace rollback**: lo ya hecho queda en el historial (archivos escritos, comandos, mensajes). Si había `tool_calls`
+  sin ejecutar se les agrega un mensaje `tool` "Cancelado…" (sin eso el historial es inválido) y se añade una nota `system`
+  "⏹ Detenido por el usuario…". El `catch` no emite error ni hace rollback cuando `tab.stopped`/`tab.closed`.
+- `completed` evita marcar como detenido un turno cuya respuesta final ya había llegado.
+- Cerrar la pestaña también aborta (antes solo dejaba de iterar y la request seguía hasta terminar).

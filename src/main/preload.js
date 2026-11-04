@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("loom", {
   setModel: call("set-model"),
   getApiKey: call("get-api-key"),
   setApiKey: call("set-api-key"),
+  stopTab: call("stop-tab"),
   sendMessage: (tabId, text, attachments = []) => ipcRenderer.invoke("send-message", tabId, text, attachments),
   // archivos
   readFile: call("read-file"),
@@ -32,6 +33,7 @@ contextBridge.exposeInMainWorld("loom", {
   onAssistantMessage: (cb) => on("assistant-message", cb),
   onToolCall: (cb) => on("tool-call", cb),
   onToolResult: (cb) => on("tool-result", cb),
+  onProgress: (cb) => on("progress", cb),
   onError: (cb) => on("error", cb),
   onShortcut: (cb) => on("shortcut", cb),
 });

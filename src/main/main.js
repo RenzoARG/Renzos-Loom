@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 import path from "path";
 import fs from "fs";
 import OpenAI from "openai";
-import { tools, executeTool } from "../tools/index.js";
+import { tools, executeTool, runBashAsync } from "../tools/index.js";
 import {
   saveConversation, loadConversation, listConversations, deleteConversation,
   saveWorkspace, loadWorkspace, newId,
@@ -24,6 +24,7 @@ function initOpenAIClient(key) {
   client = new OpenAI({
     baseURL: "https://openrouter.ai/api/v1",
     apiKey: key || undefined,
+    maxRetries: 0, // los reintentos los maneja callModel() para poder mostrarlos en la UI
   });
 }
 
@@ -45,6 +46,13 @@ let openIds = [];         // orden de las pestañas abiertas
 let activeId = null;
 
 // ---------------------------------------------------------------- modelos
+// Búsqueda web NATIVA del proveedor. Ojo: el plugin "web" de OpenRouter (":online") funciona con cualquier
+// modelo, pero cuesta créditos incluso en modelos gratis; eso NO se marca acá.
+const hasNativeWebSearch = (m) =>
+  !!m.supported_parameters?.includes("web_search_options") ||
+  Number(m.pricing?.web_search) > 0 ||
+  m.id.startsWith("perplexity/");
+
 // Devuelve TODOS los modelos con tool calling, con flags de capacidades.
 // El filtrado (visión / gratis) lo hace la UI.
 async function getAvailableModels(force = false) {
@@ -72,9 +80,10 @@ async function getAvailableModels(force = false) {
           files: inputs.includes("file"),
           audio: inputs.includes("audio"),
           reasoning: !!m.supported_parameters?.includes("reasoning"),
+          web: hasNativeWebSearch(m),
           free,
         };
-        info.caps = ["🔧", info.vision && "👁️", info.audio && "🎤", info.reasoning && "🧠", free && "💰"].filter(Boolean).join(" ");
+        info.caps = ["🔧", info.vision && "👁️", info.audio && "🎤", info.files && "📄", info.reasoning && "🧠", info.web && "🌐", free && "💰"].filter(Boolean).join(" ");
         return info;
       })
       .sort((a, b) => b.context - a.context);
@@ -178,13 +187,39 @@ function makeTab({ id = newId(), name = DEFAULT_TAB_NAME, autoName = true, model
     id, name, autoName, createdAt,
     model: model || defaultModel,
     history: history ?? [{ role: "system", content: SYSTEM_PROMPT }],
-    busy: false, closed: false, pendingHandoff: null,
+    busy: false, closed: false, pendingHandoff: null, usage: null, stopped: false, abort: null,
   };
   tabs.set(id, tab);
   return tab;
 }
 
-const tabInfo = (t) => ({ id: t.id, name: t.name, model: t.model, busy: t.busy });
+// Tokens aproximados de un historial. No cuenta el base64 de imágenes/PDF (valor fijo por adjunto).
+function estimateTokens(history, withOverhead = true) {
+  let chars = 0, extra = withOverhead ? 600 : 0; // ~600: definiciones de las tools
+  for (const m of history) {
+    if (Array.isArray(m.content)) {
+      for (const p of m.content) {
+        if (p.type === "text") chars += p.text?.length ?? 0;
+        else if (p.type === "image_url") extra += 1000;
+        else if (p.type === "file") extra += 2000;
+      }
+    } else chars += String(m.content ?? "").length;
+    if (m.tool_calls) chars += JSON.stringify(m.tool_calls).length;
+  }
+  return Math.round(chars / 3.5) + extra;
+}
+
+// Contexto de la pestaña: el número real de la API (usage) más una estimación de lo agregado después.
+function tabCtx(tab) {
+  const u = tab.usage;
+  if (u && u.hlen <= tab.history.length) {
+    const tail = u.hlen < tab.history.length ? estimateTokens(tab.history.slice(u.hlen), false) : 0;
+    return { ctx: u.tokens + tail, ctxReal: u.hlen === tab.history.length };
+  }
+  return { ctx: estimateTokens(tab.history), ctxReal: false };
+}
+
+const tabInfo = (t) => ({ id: t.id, name: t.name, model: t.model, busy: t.busy, ...tabCtx(t) });
 const tabPayload = (t) => ({ ...tabInfo(t), messages: toUiMessages(t.history) });
 
 // Las pestañas vacías no se guardan: no ensucian la carpeta sessions/.
@@ -278,6 +313,7 @@ ipcMain.handle("close-tab", (event, id) => {
   const tab = tabs.get(id);
   if (!tab) return { active: activeId, created: null };
   tab.closed = true; // si estaba respondiendo, el ciclo se corta solo
+  tab.abort?.abort(); // y la request o el comando en curso se cancelan de verdad
   persistTab(tab);
   tabs.delete(id);
   const idx = openIds.indexOf(id);
@@ -311,7 +347,7 @@ ipcMain.handle("set-model", (event, id, modelId) => {
     tab.pendingHandoff = { from: oldModel, to: modelId };
   }
   persistTab(tab);
-  return { model: tab.model, handoffNote };
+  return { model: tab.model, handoffNote, ...tabCtx(tab) };
 });
 
 ipcMain.handle("list-saved", () => listConversations().filter((c) => !tabs.has(c.id)));
@@ -344,6 +380,62 @@ ipcMain.handle("set-api-key", (event, key) => {
   return { ok: true, key: !!key };
 });
 
+// ---------------------------------------------------------------- llamadas al modelo con progreso visible
+const MODEL_TIMEOUT_MS = 180_000;                  // sin respuesta en 3 min = se considera colgado
+const MAX_ATTEMPTS = 4;
+const RETRY_WAITS_MS = [5_000, 15_000, 30_000];    // espera antes del 2°, 3° y 4° intento (o Retry-After)
+const RETRYABLE = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+const sleep = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) return reject(new Error("abortado"));
+  const timer = setTimeout(resolve, ms);
+  signal?.addEventListener("abort", () => { clearTimeout(timer); reject(new Error("abortado")); }, { once: true });
+});
+
+async function callModel(tab, step) {
+  for (let attempt = 1; ; attempt++) {
+    const started = Date.now();
+    try {
+      const resp = await client.chat.completions.create(
+        { model: tab.model, messages: historyForModel(tab), tools },
+        { timeout: MODEL_TIMEOUT_MS, signal: tab.abort?.signal },
+      );
+      // OpenRouter a veces devuelve HTTP 200 con {error} (típico en modelos gratis): sin esto aparece "Cannot read properties of undefined".
+      if (resp.error) { const e = new Error(resp.error.message || "Error del proveedor"); e.status = Number(resp.error.code) || 502; throw e; }
+      if (!resp.choices?.length) { const e = new Error("El proveedor devolvió una respuesta vacía"); e.status = 502; throw e; }
+      return { resp, ms: Date.now() - started };
+    } catch (e) {
+      const timedOut = e.name === "APIConnectionTimeoutError";
+      const retryable = RETRYABLE.has(e.status) || timedOut || e.name === "APIConnectionError";
+      if (!retryable || attempt >= MAX_ATTEMPTS || tab.closed || tab.stopped) throw e;
+      const h = e.headers;
+      const ra = Number(typeof h?.get === "function" ? h.get("retry-after") : h?.["retry-after"]);
+      const waitMs = Math.min(60_000, ra > 0 ? ra * 1000 : RETRY_WAITS_MS[attempt - 1]);
+      const reason = e.status === 429 ? "límite de uso (429)" : timedOut ? `sin respuesta tras ${MODEL_TIMEOUT_MS / 1000}s` : e.status ? `error ${e.status}` : "error de conexión";
+      emit("progress", { tabId: tab.id, kind: "retry", step, attempt, max: MAX_ATTEMPTS, reason, waitMs });
+      await sleep(waitMs, tab.abort?.signal);
+      if (tab.closed) throw e;
+    }
+  }
+}
+
+const clipStr = (s, n = 120) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+function summarizeArgs(name, a = {}) {
+  if (name === "bash") return clipStr(a.command);
+  if (name === "grep") return clipStr(`"${a.pattern}" en ${a.path}`);
+  if (name === "write_file") return clipStr(`${a.path} (${(a.content ?? "").length} caracteres)`);
+  return clipStr(a.path);
+}
+
+// ---------------------------------------------------------------- IPC: detener
+// Corta la request al modelo (o el comando en curso). Lo ya hecho en el historial se conserva; ver finally de send-message.
+ipcMain.handle("stop-tab", (event, id) => {
+  const tab = tabs.get(id);
+  if (!tab || !tab.busy) return false;
+  tab.stopped = true;
+  tab.abort?.abort();
+  return true;
+});
+
 // ---------------------------------------------------------------- IPC: mensajes
 ipcMain.handle("send-message", async (event, tabId, userMessage, attachments = []) => {
   const tab = tabs.get(tabId);
@@ -352,8 +444,11 @@ ipcMain.handle("send-message", async (event, tabId, userMessage, attachments = [
   if (tab.busy) { emit("error", { tabId, message: "Esta conversación todavía está respondiendo." }); return { ok: false }; }
 
   tab.busy = true;
+  tab.stopped = false;
+  tab.abort = new AbortController();
   emit("tab-updated", tabInfo(tab));
   const checkpoint = tab.history.length; // si algo falla, volvemos acá para no dejar el historial roto
+  let step = 0, completed = false;
 
   try {
     tab.history.push(buildUserMessage(tab, userMessage, attachments));
@@ -362,14 +457,23 @@ ipcMain.handle("send-message", async (event, tabId, userMessage, attachments = [
       if (n) { tab.name = n; emit("tab-updated", tabInfo(tab)); }
     }
 
-    while (!tab.closed) {
-      const resp = await client.chat.completions.create({ model: tab.model, messages: historyForModel(tab), tools });
+    while (!tab.closed && !tab.stopped) {
+      step++;
+      emit("progress", { tabId, kind: "model-start", step, model: tab.model, ctx: tabCtx(tab).ctx });
+      const { resp, ms } = await callModel(tab, step);
       if (tab.closed) break; // la cerraron mientras esperábamos: se descarta la respuesta
       const msg = resp.choices[0].message;
       tab.history.push(msg);
+      if (resp.usage?.prompt_tokens) { // número real: prompt + respuesta = lo que ocupa el historial hasta acá
+        tab.usage = { tokens: resp.usage.prompt_tokens + (resp.usage.completion_tokens || 0), hlen: tab.history.length };
+        emit("tab-updated", tabInfo(tab));
+      }
+
+      emit("progress", { tabId, kind: "model-done", step, ms, promptTokens: resp.usage?.prompt_tokens, completionTokens: resp.usage?.completion_tokens, toolCalls: msg.tool_calls?.length || 0 });
 
       if (!msg.tool_calls?.length) {
         emit("assistant-message", { tabId, text: msg.content ?? "" });
+        completed = true;
         break;
       }
 
@@ -377,12 +481,17 @@ ipcMain.handle("send-message", async (event, tabId, userMessage, attachments = [
       // intercalar un mensaje "user" entre tool results rompe el protocolo con varios tool_calls.
       const pendingImages = [];
       for (const tc of msg.tool_calls) {
+        // Cada tool_call necesita su mensaje "tool" o el historial queda inválido: las que no llegaron a correr se marcan canceladas.
+        if (tab.stopped || tab.closed) { tab.history.push({ role: "tool", tool_call_id: tc.id, content: "Cancelado por el usuario antes de ejecutarse." }); continue; }
         let args;
         try { args = JSON.parse(tc.function.arguments || "{}"); }
         catch { tab.history.push({ role: "tool", tool_call_id: tc.id, content: "Error: argumentos JSON inválidos" }); continue; }
 
         emit("tool-call", { tabId, name: tc.function.name, args });
-        const result = String(executeTool(tc.function.name, args));
+        emit("progress", { tabId, kind: "tool-start", step, name: tc.function.name, summary: summarizeArgs(tc.function.name, args) });
+        const t0 = Date.now();
+        const result = String(tc.function.name === "bash" ? await runBashAsync(args.command, undefined, tab.abort?.signal) : executeTool(tc.function.name, args));
+        emit("progress", { tabId, kind: "tool-done", step, name: tc.function.name, ms: Date.now() - t0, ok: !result.startsWith("Error:"), chars: result.startsWith(IMG_PREFIX) ? 0 : result.length });
 
         if (result.startsWith(IMG_PREFIX)) {
           if (modelSupportsVision(tab.model)) {
@@ -405,9 +514,19 @@ ipcMain.handle("send-message", async (event, tabId, userMessage, attachments = [
       }
     }
   } catch (e) {
-    tab.history.length = checkpoint;
-    emit("error", { tabId, message: e.message });
+    if (!tab.stopped && !tab.closed) { // un corte pedido por el usuario no es un error: el historial queda como está
+      tab.history.length = checkpoint;
+      if (tab.usage && tab.usage.hlen > checkpoint) tab.usage = null;
+      emit("error", { tabId, message: e.message });
+    }
   } finally {
+    if (tab.stopped && !completed && !tab.closed) {
+      const note = `⏹ Detenido por el usuario${step ? ` en el paso ${step}` : ""}. Lo ya ejecutado (archivos escritos, comandos) no se deshace.`;
+      tab.history.push({ role: "system", content: note });
+      emit("progress", { tabId, kind: "stopped", text: note });
+    }
+    tab.stopped = false;
+    tab.abort = null;
     tab.pendingHandoff = null;
     tab.busy = false;
     emit("tab-updated", tabInfo(tab));

@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { execSync, execFileSync } from "child_process";
+import { execSync, execFileSync, spawn } from "child_process";
 
 export const tools = [
   { type: "function", function: { name: "read_file", description: "Lee un archivo del proyecto", parameters: { type: "object", properties: { path: { type: "string", description: "Ruta del archivo" } }, required: ["path"] } } },
@@ -42,3 +42,40 @@ export function executeTool(name, args) {
   }
 }
 
+
+// bash para la app de escritorio: asíncrono (no congela el proceso principal ni las otras pestañas),
+// sin stdin (un comando que pregunta algo no queda esperando) y con timeout que mata TODO el árbol de procesos.
+export const BASH_TIMEOUT_MS = 120_000;
+export function runBashAsync(command, timeoutMs = BASH_TIMEOUT_MS, signal) {
+  return new Promise((resolve) => {
+    if (typeof command !== "string" || !command.trim()) return resolve("Error: falta el comando");
+    const win = process.platform === "win32";
+    const child = spawn(command, { shell: true, windowsHide: true, detached: !win, stdio: ["ignore", "pipe", "pipe"] });
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    const MAX = 1024 * 1024;
+    let out = "", err = "", done = false;
+    child.stdout.on("data", (d) => { if (out.length < MAX) out += d; });
+    child.stderr.on("data", (d) => { if (err.length < MAX) err += d; });
+    const finish = (text) => { if (done) return; done = true; clearTimeout(timer); resolve(text); };
+    const killTree = () => {
+      try {
+        if (win) spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+        else process.kill(-child.pid, "SIGKILL");
+      } catch { try { child.kill("SIGKILL"); } catch { /* ya terminó */ } }
+    };
+    const timer = setTimeout(() => {
+      killTree();
+      const partial = (out || err).slice(-2000);
+      finish(`Error: el comando superó ${timeoutMs / 1000}s y fue cancelado. Si es un servidor o algo que no termina, no lo ejecutes en primer plano.` + (partial ? `\nÚltima salida:\n${partial}` : ""));
+    }, timeoutMs);
+    const onAbort = () => {
+      killTree();
+      const partial = (out || err).slice(-2000);
+      finish("Error: comando cancelado por el usuario." + (partial ? `\nÚltima salida:\n${partial}` : ""));
+    };
+    if (signal?.aborted) onAbort(); else signal?.addEventListener("abort", onAbort, { once: true });
+    child.on("error", (e) => finish("Error: " + e.message));
+    child.on("close", (code) => finish(code === 0 ? (out || err || "(sin salida)") : `Error: Command failed (código ${code}): ${command}\n${err || out}`));
+  });
+}

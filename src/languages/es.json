@@ -25,5 +25,14 @@
   "error": "Error",
   "success": "Éxito",
   "saved": "Guardado correctamente",
-  "invalidApiKey": "API Key inválida. Probá con otra."
+  "invalidApiKey": "API Key inválida. Probá con otra.",
+  "fVision": "Visión",
+  "fAudio": "Audio",
+  "fReasoning": "Razona",
+  "fFiles": "PDF",
+  "fWeb": "Internet",
+  "fFree": "Gratis",
+  "verbose": "Detalle de pasos",
+  "stop": "Detener",
+  "stopping": "Deteniendo…"
 }
