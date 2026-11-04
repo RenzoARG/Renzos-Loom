@@ -21,12 +21,28 @@ Coding agent with tabs, persistent context and image support, using OpenRouter a
 - Several tabs can be responding at the same time (orange dot = responding, blue dot = unread reply).
 - **Closing a tab doesn't delete it**: it goes to 🗂️ *Saved conversations*, from where it can be reopened or deleted.
   When you reopen the app, the tabs you had open come back.
-- **Models**: the sidebar selector changes the model of the active tab. Filters *Vision only* and *Free only*.
-  Icons: 🔧 tools · 👁️ vision · 🎤 audio · 🧠 reasoning · 💰 free.
+  If the tab was still responding, closing it also cancels the request or command in progress.
+- **Models**: the sidebar selector changes the model of the active tab. Six filters that can be combined:
+  👁️ vision · 🎤 audio · 🧠 reasoning · 📄 PDF · 🌐 internet · 💰 free. They are remembered between sessions,
+  and the counter next to the title shows how many models match (for example `12/340`).
+  Icons: 🔧 tools · 👁️ vision · 🎤 audio · 📄 PDF · 🧠 reasoning · 🌐 internet · 💰 free.
+  - 🌐 only marks models with the provider's **native** web search. OpenRouter's `:online` plugin works with any model,
+    but it costs credits even on free models, so it is not marked.
+- **Context counter**: next to the status (for example `34k/100k`) it shows how much of the model's context window the
+  active conversation uses. It uses the real figure returned by the API; with a `~` it is an estimate (reopened
+  conversations, or messages added since the last response). It turns orange at 80 % and red at 95 %.
 - **Attachments**: 📎, drag & drop, or paste with `Ctrl+V`. Images and PDFs travel as real attachments;
   code/text is inserted into the message. If you attach an image and the model has no vision,
   the tab switches by itself to one that does.
-- The agent uses tools (read/write files, run commands, search text).
+- The agent uses tools (read/write files, run commands, search text). Commands run without blocking the other tabs,
+  can't wait for keyboard input, and are cancelled after 120 s.
+- **Following the agent**: the bar above the input shows the current step, a stopwatch and the total time, and turns
+  orange/red when a step takes too long. With 🔍 *Step details* on, the chat also logs each step (model time, tokens,
+  tools, retries). Rate limits (429), server errors and timeouts are retried automatically (up to 4 attempts) with a
+  visible countdown.
+- **Stop**: while the agent is working, *Send* becomes a red **⏹ Stop** button (or press `Esc` in the input). It cancels
+  the request, the retry wait or the running command. What was already done (files written, commands run) is **not
+  undone**; the model is told that you stopped it.
 - Everything is saved in `sessions/` (one JSON per conversation; images in `<id>.assets/`).
 
 ## Icon
