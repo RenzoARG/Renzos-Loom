@@ -1,7 +1,7 @@
 {
   "name": "renzos-loom",
   "productName": "Renzo's Loom",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Coding agent with tabs, persistent context and image support, using OpenRouter as the provider",
   "author": "RenzoARG",
   "main": "src/main/main.js",
