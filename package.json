@@ -2,20 +2,28 @@
   "name": "renzos-loom",
   "productName": "Renzo's Loom",
   "version": "0.2.0",
+  "description": "Coding agent with tabs, persistent context and image support, using OpenRouter as the provider",
   "author": "RenzoARG",
   "main": "src/main/main.js",
   "type": "module",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "build": "electron-builder --win",
-    "build:dir": "electron-builder --win --dir"
+    "build": "electron-builder --win --publish never",
+    "build:dir": "electron-builder --win --dir --publish never",
+    "release": "electron-builder --win --publish always"
   },
   "build": {
     "appId": "com.renzo.loom",
     "productName": "Renzo's Loom",
     "directories": {
       "output": "dist"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "RenzoARG",
+      "repo": "Renzos-Loom",
+      "releaseType": "release"
     },
     "files": [
       "src/**/*",
