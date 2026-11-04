@@ -298,102 +298,209 @@ function saveLanguage(code) {
 // ------------------------------------------------------------ pestaña de configuración
 let configPanelEl = null;
 
+const PROVIDER_PRESETS = {
+  openrouter: { label: "OpenRouter", baseURL: "https://openrouter.ai/api/v1" },
+  openai: { label: "OpenAI", baseURL: "https://api.openai.com/v1" },
+  anthropic: { label: "Anthropic", baseURL: "https://api.anthropic.com/v1" },
+  google: { label: "Google (Gemini)", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/" },
+  xai: { label: "xAI (Grok)", baseURL: "https://api.x.ai/v1" },
+  deepseek: { label: "DeepSeek", baseURL: "https://api.deepseek.com/v1" },
+  groq: { label: "Groq", baseURL: "https://api.groq.com/openai/v1" },
+  together: { label: "Together AI", baseURL: "https://api.together.xyz/v1" },
+  mistral: { label: "Mistral", baseURL: "https://api.mistral.ai/v1" },
+  custom: { label: "Personalizado", baseURL: "" },
+};
+
+function el(tag, props = {}, children = []) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "text") n.textContent = v;
+    else if (k === "style") n.style.cssText = v;
+    else if (k === "onclick") n.onclick = v;
+    else if (k === "onchange") n.onchange = v;
+    else n[k] = v;
+  }
+  for (const c of children) if (c) n.appendChild(c);
+  return n;
+}
+
+async function refreshModels() {
+  allModels = await window.loom.getModels(true);
+  renderProviderFilters();
+  renderModelOptions();
+}
+
 function createConfigPanel() {
   if (configPanelEl) return configPanelEl;
-  const div = document.createElement("div");
-  div.className = "config-panel";
-  div.style.cssText = "padding: 24px; max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;";
+  const div = el("div", { className: "config-panel", style: "padding: 24px; max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;" });
 
-  const h2 = document.createElement("h2");
-  h2.textContent = t("configure");
-  h2.style.cssText = "font-size: 20px; margin: 0; color: var(--text);";
+  const h2 = el("h2", { text: t("configure"), style: "font-size: 20px; margin: 0; color: var(--text);" });
+  const desc = el("p", { text: t("configureDesc"), style: "font-size: 14px; color: var(--muted); margin: 0;" });
 
-  const desc = document.createElement("p");
-  desc.textContent = t("configureDesc");
-  desc.style.cssText = "font-size: 14px; color: var(--muted); margin: 0;";
+  // ------------------------------------------------------------ API Keys
+  const keysGroup = el("div", { style: "display: flex; flex-direction: column; gap: 8px;" });
+  const keysHeader = el("div", { style: "display: flex; align-items: center; justify-content: space-between;" });
+  const keysLabel = el("label", { text: t("apiKeysTitle") || "API Keys", style: "font-size: 14px; color: var(--text);" });
+  const addBtn = el("button", {
+    text: "＋ " + (t("addKey") || "Add key"),
+    style: "padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; font-size: 12px;",
+  });
+  keysHeader.append(keysLabel, addBtn);
+  keysGroup.appendChild(keysHeader);
 
-  // API Key
-  const apiKeyGroup = document.createElement("div");
-  apiKeyGroup.style.cssText = "display: flex; flex-direction: column; gap: 8px;";
-  const apiKeyLabel = document.createElement("label");
-  apiKeyLabel.textContent = t("apiKey");
-  apiKeyLabel.style.cssText = "font-size: 14px; color: var(--text);";
-  const apiKeyInput = document.createElement("input");
-  apiKeyInput.type = "password";
-  apiKeyInput.id = "config-api-key-input";
-  apiKeyInput.placeholder = t("apiKeyPlaceholder");
-  apiKeyInput.style.cssText = "padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 14px;";
-  apiKeyGroup.appendChild(apiKeyLabel);
-  apiKeyGroup.appendChild(apiKeyInput);
+  const keysList = el("div", { id: "api-keys-list", style: "display: flex; flex-direction: column; gap: 6px;" });
+  const keysEmpty = el("p", { text: t("noKeys") || "No API keys yet. Add one to use models.", style: "font-size: 12px; color: var(--muted); margin: 4px 0;" });
+  keysList.appendChild(keysEmpty);
+  keysGroup.appendChild(keysList);
+
+  // ---- editor inline (menos propenso a fallar que un modal): se muestra bajo la lista
+  const editor = el("div", {
+    id: "api-key-editor", hidden: true,
+    style: "display: none; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--surface);",
+  });
+  const providerSelect = el("select", { style: "padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 13px;" });
+  for (const [id, preset] of Object.entries(PROVIDER_PRESETS)) {
+    const opt = el("option", { value: id, text: preset.label });
+    providerSelect.appendChild(opt);
+  }
+  const customProviderInput = el("input", {
+    placeholder: t("customProviderName") || "Nombre del proveedor (opcional)",
+    style: "display: none; padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 13px;",
+  });
+  const baseUrlInput = el("input", {
+    placeholder: t("endpoint") || "Endpoint (Base URL)",
+    style: "padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 13px;",
+  });
+  const keyInput = el("input", {
+    type: "password", placeholder: t("apiKeyPlaceholder") || "sk-...",
+    style: "padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 13px;",
+  });
+  const editorStatus = el("p", { style: "font-size: 12px; color: var(--muted); min-height: 16px; margin: 0;" });
+  const editorBtns = el("div", { style: "display: flex; gap: 8px;" });
+  const saveBtn = el("button", {
+    text: t("save") || "Save",
+    style: "padding: 8px 16px; border: none; border-radius: 6px; background: var(--blue); color: #fff; cursor: pointer; font-size: 13px;",
+  });
+  const cancelBtn = el("button", {
+    text: t("cancel") || "Cancel",
+    style: "padding: 8px 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; font-size: 13px;",
+  });
+  editorBtns.append(saveBtn, cancelBtn);
+  editor.append(providerSelect, customProviderInput, baseUrlInput, keyInput, editorStatus, editorBtns);
+  keysGroup.appendChild(editor);
+
+  providerSelect.onchange = () => {
+    const preset = PROVIDER_PRESETS[providerSelect.value];
+    baseUrlInput.value = preset?.baseURL || "";
+    customProviderInput.style.display = providerSelect.value === "custom" ? "block" : "none";
+    editorStatus.textContent = "";
+  };
+  addBtn.onclick = () => {
+    editor.hidden = false;
+    editor.style.display = "flex";
+    providerSelect.value = "openrouter";
+    providerSelect.onchange();
+    keyInput.value = "";
+    editorStatus.textContent = "";
+    keyInput.focus();
+  };
+  cancelBtn.onclick = () => {
+    editor.hidden = true;
+    editor.style.display = "none";
+  };
+  saveBtn.onclick = async () => {
+    const key = keyInput.value.trim();
+    if (!key) { editorStatus.textContent = t("invalidApiKey") || "Falta la API key"; editorStatus.style.color = "#ff8a8a"; return; }
+    if (!baseUrlInput.value.trim()) { editorStatus.textContent = t("needEndpoint") || "Falta el endpoint"; editorStatus.style.color = "#ff8a8a"; return; }
+    const providerId = providerSelect.value;
+    const provider = providerId === "custom" ? customProviderInput.value.trim() || PROVIDER_PRESETS.custom.label : PROVIDER_PRESETS[providerId].label;
+    const res = await window.loom.addApiKey({ providerId, provider, baseURL: baseUrlInput.value.trim(), key });
+    if (!res?.ok) { editorStatus.textContent = res?.error || "No se pudo guardar"; editorStatus.style.color = "#ff8a8a"; return; }
+    editorStatus.textContent = t("saved") || "Saved";
+    editorStatus.style.color = "var(--muted)";
+    editor.hidden = true;
+    editor.style.display = "none";
+    await refreshModels();
+    await renderKeysList();
+  };
+
+  let confirmingId = null;
+  async function renderKeysList() {
+    const entries = await window.loom.listApiKeys();
+    keysList.innerHTML = "";
+    if (!entries.length) { keysList.appendChild(keysEmpty); return; }
+    for (const e of entries) {
+      const st = e.status?.estado || "untested";
+      const dotColor = st === "ok" ? "var(--green)" : st === "error" ? "#ff8a8a" : "var(--muted)";
+      const stText = st === "ok" ? `✓ ${e.status.detalle || "OK"}` : st === "error" ? `✗ ${e.status.detalle || "Error"}` : "○ sin probar";
+      const row = el("div", {
+        style: "display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface);",
+      });
+      const dot = el("span", { style: `width: 8px; height: 8px; border-radius: 50%; background: ${dotColor}; flex-shrink: 0;`, title: stText });
+      const info = el("div", { style: "flex: 1; min-width: 0;" });
+      info.append(
+        el("div", { text: e.provider, style: "font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" }),
+        el("div", { text: `${e.baseURL} · ${e.keyTail}`, style: "font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" }),
+        el("div", { text: stText, style: "font-size: 11px; color: var(--muted);" }),
+      );
+      const testBtn = el("button", {
+        text: t("test") || "Test",
+        style: "padding: 5px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--text); cursor: pointer; font-size: 11px;",
+      });
+      testBtn.onclick = async () => {
+        testBtn.disabled = true;
+        testBtn.textContent = "…";
+        await window.loom.testApiKey(e.id);
+        await renderKeysList();
+      };
+      const delBtn = el("button", {
+        text: confirmingId === e.id ? "¿?" : "🗑",
+        title: t("deleteKey") || "Delete key",
+        style: `padding: 5px 10px; border: 1px solid var(--line); border-radius: 5px; background: ${confirmingId === e.id ? "#2a1519" : "var(--panel)"}; color: ${confirmingId === e.id ? "#ff8a8a" : "var(--text)"}; cursor: pointer; font-size: 11px;`,
+      });
+      delBtn.onclick = async () => {
+        if (confirmingId !== e.id) { confirmingId = e.id; setTimeout(renderKeysList, 2500); renderKeysList(); return; }
+        confirmingId = null;
+        await window.loom.deleteApiKey(e.id);
+        await refreshModels();
+        await renderKeysList();
+      };
+      row.append(dot, info, testBtn, delBtn);
+      keysList.appendChild(row);
+    }
+  }
+  window._loomRenderKeysList = renderKeysList;
 
   // Idioma
-  const langGroup = document.createElement("div");
-  langGroup.style.cssText = "display: flex; flex-direction: column; gap: 8px;";
-  const langLabel = document.createElement("label");
-  langLabel.textContent = t("language");
-  langLabel.style.cssText = "font-size: 14px; color: var(--text);";
-  const langSelect = document.createElement("select");
-  langSelect.style.cssText = "padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 14px;";
+  const langGroup = el("div", { style: "display: flex; flex-direction: column; gap: 8px;" });
+  const langLabel = el("label", { text: t("language"), style: "font-size: 14px; color: var(--text);" });
+  const langSelect = el("select", { style: "padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 14px;" });
   for (const code in langDict) {
-    const opt = document.createElement("option");
-    opt.value = code;
-    // Cada idioma se muestra con su nombre nativo (no traducido)
-    opt.textContent = code === "es" ? "Español" : code === "en" ? "English" : code;
+    const opt = el("option", { value: code, text: code === "es" ? "Español" : code === "en" ? "English" : code });
     langSelect.appendChild(opt);
   }
   langSelect.value = currentLang;
-  // Guardar referencias a las opciones para actualizarlas al cambiar idioma
   const langOptions = Array.from(langSelect.options);
-  langSelect.onchange = (e) => {
-    saveLanguage(e.target.value);
+  langSelect.onchange = (ev) => {
+    saveLanguage(ev.target.value);
     langSelect.value = currentLang;
     h2.textContent = t("configure");
     desc.textContent = t("configureDesc");
     langLabel.textContent = t("language");
+    keysLabel.textContent = t("apiKeysTitle") || "API Keys";
+    addBtn.textContent = "＋ " + (t("addKey") || "Add key");
     btnClose.textContent = t("ready");
-    // Los nombres de idioma no cambian (son nativos)
   };
-  langGroup.appendChild(langLabel);
-  langGroup.appendChild(langSelect);
+  langGroup.append(langLabel, langSelect);
 
   // Botón cerrar
-  const btnClose = document.createElement("button");
-  btnClose.textContent = t("ready");
-  btnClose.style.cssText = "padding: 10px 24px; border: none; border-radius: 6px; background: var(--blue); color: #fff; cursor: pointer; font-size: 14px; align-self: flex-start; margin-top: 8px;";
-  btnClose.onclick = async () => {
-    const key = apiKeyInput.value.trim();
-    if (key) {
-      localStorage.setItem("loomApiKey", key);
-      try {
-        await window.loom.setApiKey(key);
-        // Recargar modelos con la nueva API Key
-        const models = await window.loom.getModels();
-        allModels = models;
-        renderModelOptions();
-        setStatus("API Key guardada y modelos cargados");
-      } catch (e) {
-        setStatus("Error guardando API Key: " + e.message);
-      }
-      hideConfigPanel();
-    } else {
-      localStorage.removeItem("loomApiKey");
-      try {
-        await window.loom.setApiKey("");
-        allModels = [];
-        renderModelOptions();
-        setStatus("API Key eliminada");
-      } catch (e) {
-        setStatus("Error eliminando API Key");
-      }
-      hideConfigPanel();
-    }
-  };
+  const btnClose = el("button", {
+    text: t("ready"),
+    style: "padding: 10px 24px; border: none; border-radius: 6px; background: var(--blue); color: #fff; cursor: pointer; font-size: 14px; align-self: flex-start; margin-top: 8px;",
+  });
+  btnClose.onclick = () => { hideConfigPanel(); setStatus(t("ready")); };
 
-  div.appendChild(h2);
-  div.appendChild(desc);
-  div.appendChild(apiKeyGroup);
-  div.appendChild(langGroup);
-  div.appendChild(btnClose);
+  div.append(h2, desc, keysGroup, langGroup, btnClose);
 
   configPanelEl = div;
   return div;
@@ -408,13 +515,7 @@ function showConfigPanel() {
   panel.style.display = "flex";
   $("input-bar")?.style.setProperty("display", "none", "important");
   $("attachments")?.style.setProperty("display", "none", "important");
-  
-  // Mostrar API Key guardada en el input
-  const savedKey = localStorage.getItem("loomApiKey");
-  const apiKeyInput = document.getElementById("config-api-key-input");
-  if (apiKeyInput && savedKey) {
-    apiKeyInput.value = savedKey;
-  }
+  window._loomRenderKeysList?.();
 }
 
 function hideConfigPanel() {
@@ -437,7 +538,65 @@ window.loom.onShortcut((action) => {
 });
 
 // ------------------------------------------------------------ modelos (por pestaña)
-const visibleModels = () => allModels.filter((m) => Object.entries(filterBoxes).every(([k, el]) => !el.checked || m[k]));
+const PROVIDER_FILTER_KEY = "loomProviderFilters";
+let providerEnabled = new Set(); // vacío = todos visibles
+try {
+  const saved = JSON.parse(localStorage.getItem(PROVIDER_FILTER_KEY) || "null");
+  if (Array.isArray(saved)) providerEnabled = new Set(saved);
+} catch { /* sin filtros de proveedor guardados */ }
+function saveProviderFilters() {
+  localStorage.setItem(PROVIDER_FILTER_KEY, JSON.stringify([...providerEnabled]));
+}
+
+const visibleModels = () => allModels.filter((m) => {
+  if (!Object.entries(filterBoxes).every(([k, el]) => !el.checked || m[k])) return false;
+  if (providerEnabled.size && !providerEnabled.has(m.keyId || m.providerId || m.provider)) return false;
+  return true;
+});
+function providerGroups(models) {
+  const map = new Map();
+  for (const m of models) {
+    const key = m.keyId || m.providerId || m.provider || "other";
+    if (!map.has(key)) map.set(key, { label: m.provider || m.providerId || "Otros", items: [] });
+    map.get(key).items.push(m);
+  }
+  return [...map.values()];
+}
+
+function renderProviderFilters() {
+  const container = $("provider-filters");
+  container.innerHTML = "";
+  const seenMap = new Map();
+  for (const m of allModels) {
+    const id = m.keyId || m.providerId || m.provider || "other";
+    if (!seenMap.has(id)) seenMap.set(id, m.provider || m.providerId || "Otros");
+  }
+  const seen = [...seenMap.entries()].map(([id, label]) => ({ id, label }));
+  for (const p of seen) {
+    const label = document.createElement("label");
+    label.className = "chk";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = providerEnabled.size ? providerEnabled.has(p.id) : true;
+    box.addEventListener("change", () => {
+      // providerEnabled vacío = todos visibles. Al marcar/desmarcar pasamos a un set explícito.
+      if (providerEnabled.size === 0) {
+        const allIds = seen.map((s) => s.id);
+        providerEnabled = new Set(box.checked ? allIds : allIds.filter((id) => id !== p.id));
+      } else if (box.checked) {
+        providerEnabled.add(p.id);
+      } else {
+        providerEnabled.delete(p.id);
+      }
+      // Si quedan todos marcados, volvemos al estado "todos" (set vacío).
+      if (providerEnabled.size && providerEnabled.size === seen.length) providerEnabled = new Set();
+      saveProviderFilters();
+      renderModelOptions();
+    });
+    label.append(box, document.createTextNode(" " + (p.label || p.id)));
+    container.appendChild(label);
+  }
+}
 
 function renderModelOptions() {
   const t = activeTab();
@@ -446,20 +605,27 @@ function renderModelOptions() {
   const current = allModels.find((m) => m.id === t?.model);
   const shown = current && !list.includes(current) ? [current, ...list] : list;
   modelSelect.innerHTML = "";
-  if (t && !current) { // modelo que no está en la lista (ej: el del .env)
+  if (t && !current) { // modelo que no está en la lista (ej. una pestaña vieja guardada)
     const opt = document.createElement("option");
     opt.value = t.model;
     opt.textContent = t.model;
     modelSelect.appendChild(opt);
   }
-  shown.slice(0, 400).forEach((m) => {
-    const opt = document.createElement("option");
-    opt.value = m.id;
-    opt.textContent = `${m.caps} ${m.id} (${Math.round(m.context / 1000)}k)`;
-    modelSelect.appendChild(opt);
-  });
+  const groups = providerGroups(shown);
+  for (const g of groups) {
+    const og = document.createElement("optgroup");
+    og.label = g.label || "Otros";
+    for (const m of g.items.slice(0, 400)) {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = `${m.caps} ${m.id} (${Math.round(m.context / 1000)}k)`;
+      og.appendChild(opt);
+    }
+    modelSelect.appendChild(og);
+  }
   if (t) modelSelect.value = t.model;
-  $("model-id").textContent = t ? t.model : "";
+  const currentInfo = allModels.find((m) => m.id === t?.model);
+  $("model-id").textContent = t ? `${t.model}${currentInfo?.provider ? " · " + currentInfo.provider : ""}` : "";
   $("model-count").textContent = `(${list.length}/${allModels.length})`;
   updateCtx();
 }
@@ -496,6 +662,7 @@ for (const el of Object.values(filterBoxes)) {
     localStorage.setItem(FILTER_KEY, JSON.stringify(Object.fromEntries(Object.entries(filterBoxes).map(([k, b]) => [k, b.checked]))));
   });
 }
+renderProviderFilters();
 
 // Al adjuntar una imagen con un modelo sin visión, pasamos solos a uno que sí tenga (respetando "Solo gratis").
 async function ensureVisionModel() {
@@ -727,19 +894,13 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !modal.h
 (async function init() {
   await loadLanguages();
 
-  // Cargar API Key guardada en localStorage y aplicarla al cliente OpenAI
-  const savedKey = localStorage.getItem("loomApiKey");
-  if (savedKey) {
-    try {
-      await window.loom.setApiKey(savedKey);
-    } catch (e) {
-      console.warn("No se pudo aplicar API Key guardada:", e);
-    }
-  }
+  // La llave vieja de localStorage ya no se migra: las llaves se cargan en Configuración ⚙️.
+  localStorage.removeItem("loomApiKey");
 
   // Cargar estado y modelos (los modelos dependen de que la key esté seteada)
   const state = await window.loom.getState();
-  allModels = await window.loom.getModels();
+  allModels = await window.loom.getModels(true);
+  renderProviderFilters();
   state.tabs.forEach(addTab);
   activate(state.active, { notify: false });
   applyTranslations();

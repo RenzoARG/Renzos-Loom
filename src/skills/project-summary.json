@@ -1,0 +1,22 @@
+{
+  "name": "project-summary",
+  "description": "Genera un resumen del proyecto actual incluyendo estructura principal, archivos clave, dependencias y estado actual. Útil para que la IA tenga contexto rápidamente sin leer todo el código.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "focusAreas": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Áreas en las enfocarse: 'estructura', 'dependencias', 'scripts', 'configuración', 'conversaciones'",
+        "default": ["estructura", "dependencias"]
+      },
+      "maxFiles": {
+        "type": "integer",
+        "description": "Número máximo de archivos a inspeccionar (default: 10)",
+        "default": 10
+      }
+    },
+    "required": []
+  },
+  "example": "project-summary({ focusAreas: ['estructura', 'dependencias'], maxFiles: 5 })"
+}

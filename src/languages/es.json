@@ -34,5 +34,15 @@
   "fFree": "Gratis",
   "verbose": "Detalle de pasos",
   "stop": "Detener",
-  "stopping": "Deteniendo…"
+  "stopping": "Deteniendo…",
+  "apiKeysTitle": "API Keys",
+  "addKey": "Agregar llave",
+  "noKeys": "Todavía no hay llaves. Agregá una para usar modelos.",
+  "endpoint": "Endpoint (Base URL)",
+  "customProviderName": "Nombre del proveedor (opcional)",
+  "test": "Probar",
+  "cancel": "Cancelar",
+  "deleteKey": "Borrar llave",
+  "needEndpoint": "Falta el endpoint",
+  "filterProvider": "Filtrar por proveedor"
 }

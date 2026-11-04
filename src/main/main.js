@@ -7,7 +7,7 @@ import OpenAI from "openai";
 import { tools, executeTool, runBashAsync } from "../tools/index.js";
 import {
   saveConversation, loadConversation, listConversations, deleteConversation,
-  saveWorkspace, loadWorkspace, newId,
+  saveWorkspace, loadWorkspace, newId, SESSIONS_DIR,
 } from "../context/sessions.js";
 
 const APP_NAME = "Renzo's Loom";
@@ -15,17 +15,100 @@ app.setName(APP_NAME);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// El cliente OpenAI se crea SIN apiKey inicial. Se configura cuando el usuario guarda la key.
+// ---------------------------------------------------------------- llaves de API (múltiples)
+// Cada entrada tiene su propio cliente OpenAI-compatible. Para saber qué modelo va por qué llave
+// pedimos /models a cada entrada y etiquetamos los modelos con keyId (ver getAvailableModels).
+// Las llaves se guardan SOLO en main: el renderer recibe como máximo (provider, endpoint, keyTail).
+const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+const PROVIDER_PRESETS = {
+  openrouter: { label: "OpenRouter", baseURL: OPENROUTER_BASE },
+  openai: { label: "OpenAI", baseURL: "https://api.openai.com/v1" },
+  anthropic: { label: "Anthropic", baseURL: "https://api.anthropic.com/v1" },
+  google: { label: "Google (Gemini, OpenAI-compatible)", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/" },
+  xai: { label: "xAI (Grok)", baseURL: "https://api.x.ai/v1" },
+  deepseek: { label: "DeepSeek", baseURL: "https://api.deepseek.com/v1" },
+  groq: { label: "Groq", baseURL: "https://api.groq.com/openai/v1" },
+  together: { label: "Together AI", baseURL: "https://api.together.xyz/v1" },
+  mistral: { label: "Mistral", baseURL: "https://api.mistral.ai/v1" },
+  custom: { label: "Personalizado", baseURL: "" },
+};
+
+let apiKeys = [];          // [{ id, provider, providerId, baseURL, key }]
+let clients = new Map();   // id -> cliente OpenAI
+let keyStatus = {};        // id -> { estado: "ok"|"error"|"untested", detalle, checkedAt }
+
+function maskKey(key) {
+  if (!key) return "";
+  return key.length <= 8 ? "••••" : key.slice(0, 4) + "…•••" + key.slice(-4);
+}
+function apiKeySummary(e) {
+  return {
+    id: e.id, provider: e.provider || "Personalizado", providerId: e.providerId || "custom",
+    baseURL: e.baseURL || "", keyTail: maskKey(e.key), status: keyStatus[e.id] || { estado: "untested" },
+  };
+}
+
+const KEYS_FILE = path.join(SESSIONS_DIR, "_api_keys.json");
+function saveApiKeys() {
+  try {
+    fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+    const tmp = KEYS_FILE + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(apiKeys.map(({ id, providerId, baseURL, key }) => ({ id, providerId, baseURL, key })), null, 2));
+    fs.renameSync(tmp, KEYS_FILE);
+  } catch (e) { console.error("saveApiKeys:", e.message); }
+}
+function loadApiKeys() {
+  apiKeys = [];
+  try {
+    if (fs.existsSync(KEYS_FILE)) {
+      const arr = JSON.parse(fs.readFileSync(KEYS_FILE, "utf8"));
+      if (Array.isArray(arr)) {
+        for (const a of arr) {
+          if (!a?.key) continue;
+          const providerId = a.providerId || "custom";
+          apiKeys.push({
+            id: a.id || newId(),
+            provider: PROVIDER_PRESETS[providerId]?.label || "Personalizado",
+            providerId,
+            baseURL: a.baseURL || PROVIDER_PRESETS[providerId]?.baseURL || "",
+            key: a.key,
+          });
+        }
+      }
+    }
+  } catch (e) { console.error("loadApiKeys:", e.message); }
+  // Las llaves viven solo en Configuración ⚙️ (sessions/_api_keys.json). Sin fallback de .env.
+  for (const e of apiKeys) initClientFor(e);
+  // La primera llave es la "activa" para el IPC viejo (get/set-api-key) y para la migración del renderer.
+  if (apiKeys[0]) { apiKey = apiKeys[0].key; client = clients.get(apiKeys[0].id) || null; }
+}
+
+function initClientFor(e) {
+  clients.set(e.id, new OpenAI({
+    baseURL: e.baseURL || undefined,
+    apiKey: e.key || undefined,
+    maxRetries: 0,
+  }));
+}
+function initAllClients() {
+  clients = new Map();
+  for (const e of apiKeys) initClientFor(e);
+}
+
+// Compatibilidad con lo que ya existe (una sola llave activa = la primera).
 let apiKey = null;
 let client = null;
-
 function initOpenAIClient(key) {
   apiKey = key;
   client = new OpenAI({
-    baseURL: "https://openrouter.ai/api/v1",
+    baseURL: OPENROUTER_BASE,
     apiKey: key || undefined,
-    maxRetries: 0, // los reintentos los maneja callModel() para poder mostrarlos en la UI
+    maxRetries: 0,
   });
+}
+function syncLegacyKey() {
+  if (apiKeys[0]) { apiKey = apiKeys[0].key; client = clients.get(apiKeys[0].id) || null; }
+  else { apiKey = null; client = null; }
 }
 
 const FALLBACK_MODEL = "openai/gpt-4o-mini";
@@ -54,20 +137,21 @@ const hasNativeWebSearch = (m) =>
   m.id.startsWith("perplexity/");
 
 // Devuelve TODOS los modelos con tool calling, con flags de capacidades.
-// El filtrado (visión / gratis) lo hace la UI.
+// Pide /models a cada llave guardada y etiqueta cada modelo con keyId/provider para
+// poder elegir la llave correcta al responder (callModel usa keyForModel()).
 async function getAvailableModels(force = false) {
-  if (!apiKey) return []; // No hay API Key configurada
+  if (!apiKeys.length) return [];
   if (!force && modelsCache.length && Date.now() - modelsFetchedAt < 10 * 60_000) return modelsCache;
-  try {
-    const res = await fetch("https://openrouter.ai/api/v1/models", {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const { data } = await res.json();
-    modelsCache = (data || [])
-      .filter((m) => m.context_length > 0 && m.supported_parameters?.includes("tools"))
-      .map((m) => {
-        // input_modalities es el campo confiable; "modality" ("text+image->text") es fallback
+  const byId = new Map();
+  for (const entry of apiKeys) {
+    const base = (entry.baseURL || "").replace(/\/$/, "");
+    if (!base) continue;
+    const url = `${base}/models`;
+    try {
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${entry.key}` }, signal: AbortSignal.timeout(20_000) });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const { data } = await res.json();
+      for (const m of (data || [])) {
         const inputs = m.architecture?.input_modalities
           ?? m.architecture?.modality?.split("->")[0].split("+")
           ?? ["text"];
@@ -75,33 +159,49 @@ async function getAvailableModels(force = false) {
         const info = {
           id: m.id,
           name: m.name,
-          context: m.context_length,
+          context: m.context_length || m.contextLength || 0,
           vision: inputs.includes("image"),
           files: inputs.includes("file"),
           audio: inputs.includes("audio"),
           reasoning: !!m.supported_parameters?.includes("reasoning"),
           web: hasNativeWebSearch(m),
           free,
+          keyId: entry.id,
+          provider: entry.provider || entry.providerId || "Personalizado",
+          providerId: entry.providerId || "custom",
         };
         info.caps = ["🔧", info.vision && "👁️", info.audio && "🎤", info.files && "📄", info.reasoning && "🧠", info.web && "🌐", free && "💰"].filter(Boolean).join(" ");
-        return info;
-      })
-      .sort((a, b) => b.context - a.context);
-    modelsFetchedAt = Date.now();
-  } catch (e) {
-    console.error("getAvailableModels:", e.message);
+        // Si dos llaves exponen el mismo modelo, preferimos la de contexto mayor; en empate, la primera.
+        const prev = byId.get(info.id);
+        if (!prev || info.context > (prev.context || 0)) byId.set(info.id, info);
+      }
+    } catch (e) {
+      console.error(`getAvailableModels (${entry.provider}):`, e.message);
+    }
   }
+  modelsCache = [...byId.values()].sort((a, b) => b.context - a.context);
+  if (modelsCache.length) modelsFetchedAt = Date.now();
   return modelsCache;
 }
 
-// Si no conocemos el modelo (ej: MODEL del .env que no esta en la lista) dejamos que decida la API.
+function keyForModel(modelId) {
+  const info = modelsCache.find((m) => m.id === modelId);
+  if (info?.keyId) {
+    const entry = apiKeys.find((e) => e.id === info.keyId);
+    if (entry && clients.has(entry.id)) return { client: clients.get(entry.id), entry };
+  }
+  // Fallback: primera llave disponible.
+  const first = apiKeys[0];
+  return first ? { client: clients.get(first.id), entry: first } : null;
+}
+
+// Si no conocemos el modelo, dejamos que decida la API.
 const modelSupportsVision = (id) => {
   const info = modelsCache.find((m) => m.id === id);
   return info ? info.vision : true;
 };
 
 function pickDefaultModel(models) {
-  if (process.env.MODEL && models.some((m) => m.id === process.env.MODEL)) return process.env.MODEL;
   return (models.find((m) => m.free && m.vision) || models.find((m) => m.free) || models[0])?.id ?? FALLBACK_MODEL;
 }
 
@@ -281,6 +381,7 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   if (process.platform === "win32") app.setAppUserModelId("com.renzo.loom");
+  loadApiKeys();
   const models = await getAvailableModels();
   defaultModel = pickDefaultModel(models);
   restoreWorkspace();
@@ -373,11 +474,76 @@ ipcMain.handle("delete-saved", (event, id) => {
 
 ipcMain.handle("get-models", async (event, force) => getAvailableModels(force));
 
-// ---------------------------------------------------------------- IPC: API Key
+// ---------------------------------------------------------------- IPC: API Keys (múltiples)
 ipcMain.handle("get-api-key", () => apiKey);
 ipcMain.handle("set-api-key", (event, key) => {
-  initOpenAIClient(key);
+  // Migra la llave vieja (del formulario anterior) como primera entrada OpenRouter si la lista está vacía.
+  if (key && !apiKeys.length) {
+    apiKeys.push({ id: newId(), provider: "OpenRouter", providerId: "openrouter", baseURL: OPENROUTER_BASE, key: key.trim() });
+    saveApiKeys();
+    syncLegacyKey();
+    void getAvailableModels(true);
+  } else if (key) {
+    apiKeys[0].key = key.trim();
+    saveApiKeys();
+    initClientFor(apiKeys[0]);
+    syncLegacyKey();
+    void getAvailableModels(true);
+  } else {
+    apiKey = null;
+    client = null;
+  }
   return { ok: true, key: !!key };
+});
+
+ipcMain.handle("list-api-keys", () => apiKeys.map(apiKeySummary));
+ipcMain.handle("add-api-key", (event, { providerId, provider, baseURL, key }) => {
+  const pid = PROVIDER_PRESETS[providerId] ? providerId : "custom";
+  const entry = {
+    id: newId(),
+    provider: (provider || PROVIDER_PRESETS[pid]?.label || "Personalizado").toString(),
+    providerId: pid,
+    baseURL: (baseURL || PROVIDER_PRESETS[pid]?.baseURL || "").trim(),
+    key: (key || "").trim(),
+  };
+  if (!entry.key) return { ok: false, error: "Falta la API key" };
+  apiKeys.push(entry);
+  initClientFor(entry);
+  saveApiKeys();
+  syncLegacyKey();
+  keyStatus[entry.id] = { estado: "untested" };
+  void getAvailableModels(true);
+  return { ok: true, entry: apiKeySummary(entry) };
+});
+ipcMain.handle("delete-api-key", (event, id) => {
+  const idx = apiKeys.findIndex((e) => e.id === id);
+  if (idx < 0) return { ok: false };
+  apiKeys.splice(idx, 1);
+  clients.delete(id);
+  delete keyStatus[id];
+  saveApiKeys();
+  syncLegacyKey();
+  void getAvailableModels(true);
+  return { ok: true };
+});
+ipcMain.handle("test-api-key", async (event, id) => {
+  const entry = apiKeys.find((e) => e.id === id);
+  if (!entry) return { ok: false, estado: "error", detalle: "Llave no encontrada" };
+  const base = (entry.baseURL || "").replace(/\/$/, "");
+  try {
+    const res = await fetch(`${base}/models`, {
+      headers: { Authorization: `Bearer ${entry.key}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const { data } = await res.json();
+    const n = Array.isArray(data) ? data.length : 0;
+    keyStatus[entry.id] = { estado: "ok", detalle: `${n} modelos`, checkedAt: Date.now() };
+    return { ok: true, estado: "ok", detalle: `${n} modelos`, checkedAt: Date.now() };
+  } catch (e) {
+    keyStatus[entry.id] = { estado: "error", detalle: e.message, checkedAt: Date.now() };
+    return { ok: false, estado: "error", detalle: e.message };
+  }
 });
 
 // ---------------------------------------------------------------- llamadas al modelo con progreso visible
@@ -395,7 +561,9 @@ async function callModel(tab, step) {
   for (let attempt = 1; ; attempt++) {
     const started = Date.now();
     try {
-      const resp = await client.chat.completions.create(
+      const picked = keyForModel(tab.model);
+      if (!picked?.client) { const e = new Error("No hay API Key configurada. Abrí Configuración (⚙️) y agregá una llave."); e.status = 401; throw e; }
+      const resp = await picked.client.chat.completions.create(
         { model: tab.model, messages: historyForModel(tab), tools },
         { timeout: MODEL_TIMEOUT_MS, signal: tab.abort?.signal },
       );
@@ -440,7 +608,7 @@ ipcMain.handle("stop-tab", (event, id) => {
 ipcMain.handle("send-message", async (event, tabId, userMessage, attachments = []) => {
   const tab = tabs.get(tabId);
   if (!tab) return { ok: false };
-  if (!apiKey) { emit("error", { tabId, message: "No hay API Key configurada. Abrí Configuración (⚙️) y pegá tu clave de OpenRouter." }); return { ok: false }; }
+  if (!apiKeys.length) { emit("error", { tabId, message: "No hay API Key configurada. Abrí Configuración (⚙️) y agregá una llave." }); return { ok: false }; }
   if (tab.busy) { emit("error", { tabId, message: "Esta conversación todavía está respondiendo." }); return { ok: false }; }
 
   tab.busy = true;

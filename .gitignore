@@ -8,6 +8,7 @@ sessions/
 .env
 .env.local
 .env.*.local
+*.key
 
 # Build / empaquetado
 dist/

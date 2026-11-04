@@ -6,12 +6,14 @@ import fs from "fs";
 import { tools, executeTool } from "./tools/index.js";
 import { saveSession, loadSession, listSessions } from "./context/sessions.js";
 
+// La versión de consola (src/index.js) lee la key desde el entorno, como las herramientas CLI.
+// La app de escritorio NO usa esto: sus llaves viven en Configuración ⚙️ (sessions/_api_keys.json).
 const client = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
-const FALLBACK_MODEL = process.env.MODEL || "openai/gpt-4o-mini";
+const FALLBACK_MODEL = "openai/gpt-4o-mini";
 
 const SYSTEM_PROMPT = "Sos Renzo's Loom, un asistente de coding. Tenes herramientas para leer/escribir archivos, ejecutar comandos, listar directorios y buscar texto. Usalas para ayudar al usuario. Se conciso.";
 

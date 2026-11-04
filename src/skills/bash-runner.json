@@ -1,0 +1,20 @@
+{
+  "name": "bash-runner",
+  "description": "Ejecuta un comando de shell de forma segura con timeout y cancelación. Útil para comandos de sistema, lecturas de directorio, búsquedas de texto, etc.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "El comando bash a ejecutar"
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "description": "Timeout en milisegundos (default: 120000). Usa el valor global si no se especifica.",
+        "default": 120000
+      }
+    },
+    "required": ["command"]
+  },
+  "example": "bash-runner({ command: 'ls -la src/' })"
+}

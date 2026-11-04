@@ -1,0 +1,25 @@
+{
+  "name": "conversation-browser",
+  "description": "Navega y busca en conversaciones guardadas. Útil para reencontrar información de discusiones anteriores, continuar hilos o aprender del historial.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "description": "Acción a realizar: 'list', 'search', 'load', 'recent'",
+        "default": "list"
+      },
+      "pattern": {
+        "type": "string",
+        "description": "Patrón de búsqueda (solo para action: 'search')",
+        "default": ""
+      },
+      "conversationId": {
+        "type": "string",
+        "description": "ID de conversación específica (solo para action: 'load')"
+      }
+    },
+    "required": ["action"]
+  },
+  "example": "conversation-browser({ action: 'search', pattern: 'Mercado Pago' })"
+}

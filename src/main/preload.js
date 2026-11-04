@@ -19,6 +19,10 @@ contextBridge.exposeInMainWorld("loom", {
   setModel: call("set-model"),
   getApiKey: call("get-api-key"),
   setApiKey: call("set-api-key"),
+  listApiKeys: call("list-api-keys"),
+  addApiKey: call("add-api-key"),
+  deleteApiKey: call("delete-api-key"),
+  testApiKey: call("test-api-key"),
   stopTab: call("stop-tab"),
   sendMessage: (tabId, text, attachments = []) => ipcRenderer.invoke("send-message", tabId, text, attachments),
   // archivos
