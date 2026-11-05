@@ -44,5 +44,10 @@
   "cancel": "Cancel",
   "deleteKey": "Delete key",
   "needEndpoint": "Missing endpoint",
-  "filterProvider": "Filter by provider"
+  "filterProvider": "Filter by provider",
+  "skillsTitle": "Skills",
+  "skillsHint": "Your user skills live outside the .exe (%APPDATA%/Renzo's Loom/skills). Create one folder per skill with its SKILL.md and reload.",
+  "openSkillsFolder": "📁 Open skills folder",
+  "reloadSkills": "↻ Reload skills",
+  "skillsReloaded": "Skills reloaded"
 }

@@ -1,6 +1,6 @@
 # Renzo's Loom
 
-Agente de coding con pestañas, contexto persistente y soporte de imágenes. Funciona con **múltiples API keys y proveedores** (OpenRouter, OpenAI, Anthropic, DeepSeek, Groq y más): la lista de modelos se arma desde *todas* tus llaves y cada modelo se llama con la llave que lo expone.
+Agente de coding con pestañas, contexto persistente, soporte de imágenes y **Agent Skills (formato estándar)**. Funciona con **múltiples API keys y proveedores** (OpenRouter, OpenAI, Anthropic, DeepSeek, Groq y más): la lista de modelos se arma desde *todas* tus llaves y cada modelo se llama con la llave que lo expone. Las skills enseñan al agente flujos reutilizables (debugging, TDD, code review, planning) bajo demanda.
 
 > *¿Te la pasás usando agentes gratuitos porque no tenés un centavo partido a la mitad? Usá Renzo's Loom para no perder el hilo de la conversación!!!*
 
@@ -51,6 +51,7 @@ Agente de coding con pestañas, contexto persistente y soporte de imágenes. Fun
   la request, la espera entre reintentos o el comando en curso. Lo ya hecho (archivos escritos, comandos corridos) **no**
   se deshace; al modelo se le dice que lo detuviste.
 - Todo se guarda en `sessions/` (un JSON por conversación; imágenes en `<id>.assets/`; llaves en `_api_keys.json`).
+- **Skills (v0.5.0)**: Agent Skills estándar — una carpeta por skill con su `SKILL.md` (frontmatter `name` + `description`). Trae 20 bundled (4 propios + 10 de [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) + 6 de [obra/superpowers](https://github.com/obra/superpowers), todos MIT, curados para las tools de Loom). Sumá las tuyas en `%APPDATA%/Renzo's Loom/skills/` (fuera del `.exe`, se autogenera, gana sobre bundled en choque de nombre). Configuración ⚙️ → **Skills**: muestra el path, **📁 Abrir carpeta de skills** y **↻ Recargar skills**. El agente ve un catálogo barato (name+description) y carga el `SKILL.md` completo bajo demanda con `read_file`. Detalle en `src/skills/README.md`.
 
 ## Ícono
 

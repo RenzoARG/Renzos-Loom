@@ -17,6 +17,12 @@ contextBridge.exposeInMainWorld("loom", {
   // modelos y mensajes (siempre por pestaña)
   getModels: call("get-models"),
   setModel: call("set-model"),
+  // skills (Agent Skills estándar: src/skills/<nombre>/SKILL.md)
+  listSkills: call("list-skills"),
+  readSkill: call("read-skill"),
+  reloadSkills: call("reload-skills"),
+  getSkillsDirs: call("get-skills-dirs"),
+  openSkillsFolder: call("open-skills-folder"),
   getApiKey: call("get-api-key"),
   setApiKey: call("set-api-key"),
   listApiKeys: call("list-api-keys"),

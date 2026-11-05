@@ -100,3 +100,29 @@ El botón "Enviar" pasa a ser "⏹ Detener" (rojo, también con Esc en el input)
   "⏹ Detenido por el usuario…". El `catch` no emite error ni hace rollback cuando `tab.stopped`/`tab.closed`.
 - `completed` evita marcar como detenido un turno cuya respuesta final ya había llegado.
 - Cerrar la pestaña también aborta (antes solo dejaba de iterar y la request seguía hasta terminar).
+
+## 7. Skills estándar (v0.4.0+)
+
+Formato **Agent Skills** (compatible con agenteskills.io / Claude Code): cada skill es una carpeta
+`src/skills/<nombre>/SKILL.md` con frontmatter `name` + `description` y cuerpo en Markdown.
+- `name` debe ser kebab-case y coincidir con el nombre de la carpeta. `description` es la disparadora.
+- El loader (`src/context/skills.js`, `loadSkills(roots)`) escanea **tres raíces** en orden
+  (la última gana en caso de choque de nombre): bundled `src/skills/` < proyecto `skills/` <
+  usuario `%APPDATA%/Renzo's Loom/skills/` (fuera del `.exe`, generada en `app.whenReady`).
+  Acepta `SKILL.md` (estándar) y `skill.md` como fallback, e ignora carpetas sin description.
+- `main.js` inyecta solo el catálogo (name+description) en el system prompt (`buildSystemPrompt()`).
+  El cuerpo completo se carga bajo demanda con `read_file` (que ya es una tool).
+- `toUiMessages()` oculta el system prompt original y el catálogo; las notas de handoff sí se muestran.
+- IPC: `list-skills` / `read-skill` / `reload-skills` / `get-skills-dirs` / `open-skills-folder`.
+- Los `.json` viejos fueron migrados y borrados. No volver a usar JSONs planos para skills.
+- Para sumar un skill: crear carpeta + `SKILL.md`, con descripción en 3ª persona ("Ejecuta… Úsala cuando…").
+  Opcional: `scripts/`, `references/` y `assets/` dentro de la carpeta.
+- Vendorizadas (MIT, ver `src/skills/THIRD-PARTY-NOTICES.md`):
+  Addy (10: api-and-interface-design, code-review-and-quality, code-simplification,
+  debugging-and-error-recovery, documentation-and-adrs, git-workflow-and-versioning,
+  incremental-implementation, planning-and-task-breakdown, security-and-hardening,
+  test-driven-development) + Superpowers (6: brainstorming, receiving-code-review,
+  requesting-code-review, systematic-debugging, verification-before-completion, writing-plans).
+  TDD dedupe: se conserva el de Addy. Excluidas las que requieren MCP/subagentes/metas.
+
+

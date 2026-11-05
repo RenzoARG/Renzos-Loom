@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, shell } from "electron";
 import { fileURLToPath } from "url";
 import path from "path";
 import fs from "fs";
@@ -9,11 +9,23 @@ import {
   saveConversation, loadConversation, listConversations, deleteConversation,
   saveWorkspace, loadWorkspace, newId, SESSIONS_DIR,
 } from "../context/sessions.js";
+import {
+  loadSkills, listSkills, readSkillBody, skillsCatalogForPrompt,
+  SKILLS_DIR, PROJECT_SKILLS_DIR,
+} from "../context/skills.js";
 
 const APP_NAME = "Renzo's Loom";
 app.setName(APP_NAME);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Carpeta externa de skills del usuario (fuera del .exe, generada en el primer arranque).
+// Prioridad: usuario > proyecto (skills/) > bundled (src/skills). app.getPath('userData')
+// en Windows es %APPDATA%\Renzo's Loom (la carpeta real de Electron, con apóstrofe).
+function userSkillsDir() {
+  try { return path.join(app.getPath("userData"), "skills"); }
+  catch { return path.join(process.env.APPDATA || process.cwd(), "Renzo's Loom", "skills"); }
+}
 
 // ---------------------------------------------------------------- llaves de API (múltiples)
 // Cada entrada tiene su propio cliente OpenAI-compatible. Para saber qué modelo va por qué llave
@@ -112,7 +124,18 @@ function syncLegacyKey() {
 }
 
 const FALLBACK_MODEL = "openai/gpt-4o-mini";
-const SYSTEM_PROMPT = "Sos Renzo's Loom, un asistente de coding. Tenes herramientas para leer/escribir archivos, ejecutar comandos, listar directorios y buscar texto. Usalas para ayudar al usuario. Se conciso.";
+const SYSTEM_PROMPT_BASE = "Sos Renzo's Loom, un asistente de coding. Tenes herramientas para leer/escribir archivos, ejecutar comandos, listar directorios y buscar texto. Usalas para ayudar al usuario. Se conciso.";
+
+// El catálogo de skills (name+description) se inyecta al system prompt: el cuerpo completo
+// se carga bajo demanda con read_file. Ver src/context/skills.js (formato Agent Skills estándar).
+function buildSystemPrompt() {
+  return SYSTEM_PROMPT_BASE + skillsCatalogForPrompt();
+}
+function isSystemPrompt(msg) {
+  if (msg?.role !== "system") return false;
+  const c = String(msg.content ?? "");
+  return c === SYSTEM_PROMPT_BASE || c.startsWith(SYSTEM_PROMPT_BASE + "\n## Skills") || c.startsWith(SYSTEM_PROMPT_BASE + "\n\n## Skills");
+}
 const IMG_PREFIX = "__IMAGE_BASE64__:";
 const IMAGE_MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".bmp": "image/bmp" };
 const MAX_TEXT_ATTACH = 200_000; // chars
@@ -262,7 +285,7 @@ function toUiMessages(history) {
   for (const m of history) {
     if (m.role === "system") {
       // El prompt del sistema original no se muestra; las notas de cambio de agente sí.
-      if (m.content && m.content !== SYSTEM_PROMPT) out.push({ role: "system", text: String(m.content) });
+      if (m.content && !isSystemPrompt(m)) out.push({ role: "system", text: String(m.content) });
       continue;
     }
     if (m.role === "user") {
@@ -286,7 +309,7 @@ function makeTab({ id = newId(), name = DEFAULT_TAB_NAME, autoName = true, model
   const tab = {
     id, name, autoName, createdAt,
     model: model || defaultModel,
-    history: history ?? [{ role: "system", content: SYSTEM_PROMPT }],
+    history: history ?? [{ role: "system", content: buildSystemPrompt() }],
     busy: false, closed: false, pendingHandoff: null, usage: null, stopped: false, abort: null,
   };
   tabs.set(id, tab);
@@ -382,6 +405,12 @@ function createWindow() {
 app.whenReady().then(async () => {
   if (process.platform === "win32") app.setAppUserModelId("com.renzo.loom");
   loadApiKeys();
+  // Skills estándar (Agent Skills): bundled < proyecto < usuario. La carpeta de usuario
+  // (%APPDATA%/Renzo's Loom/skills) se genera sola y permite agregar skills sin rebuild.
+  try {
+    fs.mkdirSync(userSkillsDir(), { recursive: true });
+  } catch { /* sin carpeta de usuario: solo bundled+proyecto */ }
+  loadSkills([PROJECT_SKILLS_DIR, userSkillsDir()]); // catálogo para el system prompt
   const models = await getAvailableModels();
   defaultModel = pickDefaultModel(models);
   restoreWorkspace();
@@ -473,6 +502,31 @@ ipcMain.handle("delete-saved", (event, id) => {
 });
 
 ipcMain.handle("get-models", async (event, force) => getAvailableModels(force));
+
+// ---------------------------------------------------------------- IPC: skills (Agent Skills estándar)
+// El renderer solo recibe catálogo (name+description); el cuerpo se lee con read-file / read_skill.
+ipcMain.handle("list-skills", () => listSkills());
+ipcMain.handle("read-skill", (event, name) => {
+  const body = readSkillBody(name);
+  return body ? { name, body } : null;
+});
+ipcMain.handle("reload-skills", () => {
+  loadSkills([PROJECT_SKILLS_DIR, userSkillsDir()]);
+  return listSkills();
+});
+ipcMain.handle("get-skills-dirs", () => ({
+  bundled: SKILLS_DIR,
+  project: PROJECT_SKILLS_DIR,
+  user: userSkillsDir(),
+}));
+ipcMain.handle("open-skills-folder", async () => {
+  const dir = userSkillsDir();
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const err = await shell.openPath(dir);
+    return { ok: !err, dir, error: err || undefined };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
 
 // ---------------------------------------------------------------- IPC: API Keys (múltiples)
 ipcMain.handle("get-api-key", () => apiKey);

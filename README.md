@@ -1,12 +1,12 @@
 # Renzo's Loom
 
-Coding agent with tabs, persistent context and image support. Works with **multiple API keys and providers** (OpenRouter, OpenAI, Anthropic, DeepSeek, Groq and more) — the model list is built from *all* your keys, and each model is called through the key that exposes it.
+Coding agent with tabs, persistent context, image support and **Agent Skills (standard format)**. Works with **multiple API keys and providers** (OpenRouter, OpenAI, Anthropic, DeepSeek, Groq and more) — the model list is built from *all* your keys, and each model is called through the key that exposes it. Skills teach the agent reusable workflows (debugging, TDD, code review, planning) on demand.
 
 > *Are you stuck using free agents because you don't have a dime to spare? Use Renzo's Loom so you never lose the thread of the conversation!!!*
 
 > 🌐 [English](README.md) · [Español](README.es.md)
 
-![Electron](https://img.shields.io/badge/Electron-33-blue) ![OpenRouter](https://img.shields.io/badge/OpenRouter-supported-green)
+![Electron](https://img.shields.io/badge/Electron-33-blue) ![OpenRouter](https://img.shields.io/badge/OpenRouter-supported-green) ![Agent Skills](https://img.shields.io/badge/Agent%20Skills-standard-green)
 
 ## Installation
 
@@ -53,6 +53,7 @@ Coding agent with tabs, persistent context and image support. Works with **multi
   the request, the retry wait or the running command. What was already done (files written, commands run) is **not
   undone**; the model is told that you stopped it.
 - Everything is saved in `sessions/` (one JSON per conversation; images in `<id>.assets/`; API keys in `_api_keys.json`).
+- **Skills (v0.5.0)**: standard Agent Skills — one folder per skill with a `SKILL.md` (`name` + `description` frontmatter). Ships with 20 bundled skills (4 own + 10 from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) + 6 from [obra/superpowers](https://github.com/obra/superpowers), all MIT, curated for Loom's tools). Add your own in `%APPDATA%/Renzo's Loom/skills/` (outside the `.exe`, auto-created, wins over bundled on name clash). Settings ⚙️ → **Skills** shows the path, **📁 Open skills folder** and **↻ Reload skills**. The agent sees a cheap catalog (name + description) and loads the full `SKILL.md` on demand via `read_file`. Details in `src/skills/README.md`.
 
 ## Icon
 

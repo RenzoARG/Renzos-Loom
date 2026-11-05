@@ -471,6 +471,39 @@ function createConfigPanel() {
   }
   window._loomRenderKeysList = renderKeysList;
 
+  // ------------------------------------------------------------ Skills
+  const skillsGroup = el("div", { style: "display: flex; flex-direction: column; gap: 8px;" });
+  const skillsLabel = el("label", { text: t("skillsTitle") || "Skills", style: "font-size: 14px; color: var(--text);" });
+  const skillsHint = el("p", {
+    text: t("skillsHint") || "Tus skills de usuario viven fuera del .exe. Creá una carpeta por skill con su SKILL.md y reiniciá Loom.",
+    style: "font-size: 12px; color: var(--muted); margin: 0;",
+  });
+  const skillsPath = el("p", { text: "", style: "font-size: 11px; color: var(--muted); word-break: break-all; margin: 0;" });
+  const skillsBtns = el("div", { style: "display: flex; gap: 8px; flex-wrap: wrap;" });
+  const openSkillsBtn = el("button", {
+    text: t("openSkillsFolder") || "📁 Abrir carpeta de skills",
+    style: "padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; font-size: 12px;",
+    onclick: async () => {
+      openSkillsBtn.disabled = true;
+      const res = await window.loom.openSkillsFolder();
+      if (!res?.ok) setStatus("No se pudo abrir la carpeta: " + (res?.error || "?"));
+      openSkillsBtn.disabled = false;
+    },
+  });
+  const reloadSkillsBtn = el("button", {
+    text: t("reloadSkills") || "↻ Recargar skills",
+    style: "padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; font-size: 12px;",
+    onclick: async () => {
+      reloadSkillsBtn.disabled = true;
+      await window.loom.reloadSkills();
+      reloadSkillsBtn.disabled = false;
+      setStatus(t("skillsReloaded") || "Skills recargados");
+    },
+  });
+  skillsBtns.append(openSkillsBtn, reloadSkillsBtn);
+  skillsGroup.append(skillsLabel, skillsHint, skillsPath, skillsBtns);
+  window.loom.getSkillsDirs?.().then((d) => { if (d?.user) skillsPath.textContent = d.user; }).catch(() => {});
+
   // Idioma
   const langGroup = el("div", { style: "display: flex; flex-direction: column; gap: 8px;" });
   const langLabel = el("label", { text: t("language"), style: "font-size: 14px; color: var(--text);" });
@@ -489,6 +522,10 @@ function createConfigPanel() {
     langLabel.textContent = t("language");
     keysLabel.textContent = t("apiKeysTitle") || "API Keys";
     addBtn.textContent = "＋ " + (t("addKey") || "Add key");
+    skillsLabel.textContent = t("skillsTitle") || "Skills";
+    skillsHint.textContent = t("skillsHint") || "Tus skills de usuario viven fuera del .exe. Creá una carpeta por skill con su SKILL.md y reiniciá Loom.";
+    openSkillsBtn.textContent = t("openSkillsFolder") || "📁 Abrir carpeta de skills";
+    reloadSkillsBtn.textContent = t("reloadSkills") || "↻ Recargar skills";
     btnClose.textContent = t("ready");
   };
   langGroup.append(langLabel, langSelect);
@@ -500,7 +537,7 @@ function createConfigPanel() {
   });
   btnClose.onclick = () => { hideConfigPanel(); setStatus(t("ready")); };
 
-  div.append(h2, desc, keysGroup, langGroup, btnClose);
+  div.append(h2, desc, keysGroup, skillsGroup, langGroup, btnClose);
 
   configPanelEl = div;
   return div;
