@@ -52,6 +52,13 @@ Agente de coding con pestañas, contexto persistente, soporte de imágenes y **A
   se deshace; al modelo se le dice que lo detuviste.
 - Todo se guarda en `sessions/` (un JSON por conversación; imágenes en `<id>.assets/`; llaves en `_api_keys.json`).
 - **Skills (v0.5.0)**: Agent Skills estándar — una carpeta por skill con su `SKILL.md` (frontmatter `name` + `description`). Trae 20 bundled (4 propios + 10 de [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) + 6 de [obra/superpowers](https://github.com/obra/superpowers), todos MIT, curados para las tools de Loom). Sumá las tuyas en `%APPDATA%/Renzo's Loom/skills/` (fuera del `.exe`, se autogenera, gana sobre bundled en choque de nombre). Configuración ⚙️ → **Skills**: muestra el path, **📁 Abrir carpeta de skills** y **↻ Recargar skills**. El agente ve un catálogo barato (name+description) y carga el `SKILL.md` completo bajo demanda con `read_file`. Detalle en `src/skills/README.md`.
+- **Compartir (v0.6.0)**: 📤 junto a ⚙️ exporta la pestaña activa como ZIP (`*.md` + `*.json` + `assets/`).
+- **Scoring (v0.6.0)**: cada modelo lleva un score jack-of-all-trades (heurística por familia, sin API externa). El desplegable lo muestra inline por prestación, ordenado mejor-primero, y las pestañas nuevas usan el mejor balance.
+
+## Créditos
+
+- Hecho con el mismo agente de coding con el que estás hablando — **Loom es el agente que te ayuda a construir Loom.**
+- Skills: [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) y [obra/superpowers](https://github.com/obra/superpowers) (MIT, ver `src/skills/THIRD-PARTY-NOTICES.md`).
 
 ## Ícono
 

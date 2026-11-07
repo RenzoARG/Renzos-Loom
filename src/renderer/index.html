@@ -65,6 +65,8 @@
     #config-tab { width: 40px; border: none; background: transparent; color: var(--muted); font-size: 16px; cursor: pointer; flex-shrink: 0; margin-left: 4px; }
     #config-tab:hover { background: var(--surface); color: var(--text); }
     #config-tab.active { background: var(--bg); color: var(--text); }
+    #share-tab { width: 40px; border: none; background: transparent; color: var(--muted); font-size: 16px; cursor: pointer; flex-shrink: 0; margin-left: 4px; }
+    #share-tab:hover { background: var(--surface); color: var(--text); }
     @keyframes pulse { 50% { opacity: .35; } }
     @media (prefers-reduced-motion: reduce) { .tab.busy .dot { animation: none; } }
 
@@ -76,7 +78,13 @@
     .msg.user { background: var(--surface-2); align-self: flex-end; }
     .msg.assistant { background: var(--surface); align-self: flex-start; border: 1px solid var(--line); }
     .msg.tool { background: transparent; border: 1px solid var(--line); font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 11px; color: var(--muted); align-self: flex-start; max-width: 95%; }
-  .msg.system { background: transparent; border: 1px dashed var(--line); font-size: 11px; color: var(--muted); align-self: center; max-width: 90%; text-align: center; }
+    .msg.system { background: transparent; border: 1px dashed var(--line); font-size: 11px; color: var(--muted); align-self: center; max-width: 90%; text-align: center; }
+    .msg.system details.handoff { text-align: left; }
+    .msg.system details.handoff summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+    .msg.system details.handoff summary:hover { color: var(--text); }
+    .msg.tool details.thought, .msg.log details.thought { text-align: left; }
+    .msg.tool details.thought summary, .msg.log details.thought summary { cursor: pointer; }
+    .msg.tool details.thought summary:hover, .msg.log details.thought summary:hover { color: var(--text); }
     .msg.error { background: #2a1519; border: 1px solid #5c2a31; align-self: flex-start; }
     .empty { margin: auto; color: var(--muted); font-size: 13px; text-align: center; }
 
@@ -149,6 +157,7 @@
     <div class="tabbar">
       <div id="tabs" role="tablist" aria-label="Conversaciones"></div>
       <button id="new-tab" title="Nueva conversación (Ctrl+T)" aria-label="Nueva conversación">+</button>
+      <button id="share-tab" title="Compartir conversación activa (ZIP)" aria-label="Compartir conversación activa">📤</button>
       <button id="config-tab" title="Configuración" aria-label="Configuración">⚙️</button>
     </div>
     <div id="chats"></div>

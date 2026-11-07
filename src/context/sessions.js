@@ -18,6 +18,8 @@ const assetsDir = (id) => path.join(SESSIONS_DIR, safe(id) + ".assets");
 const ensureDir = () => fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
 export const newId = () => crypto.randomBytes(4).toString("hex");
+export const getAssetsDir = assetsDir;
+export const getSessionFile = fileOf;
 
 // ---------------------------------------------------------------- imágenes fuera del JSON
 function externalizeImages(history, id) {

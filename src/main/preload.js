@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("loom", {
   listSaved: call("list-saved"),
   openSaved: call("open-saved"),
   deleteSaved: call("delete-saved"),
+  shareTab: call("share-tab"),
   // modelos y mensajes (siempre por pestaña)
   getModels: call("get-models"),
   setModel: call("set-model"),

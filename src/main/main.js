@@ -7,8 +7,9 @@ import OpenAI from "openai";
 import { tools, executeTool, runBashAsync } from "../tools/index.js";
 import {
   saveConversation, loadConversation, listConversations, deleteConversation,
-  saveWorkspace, loadWorkspace, newId, SESSIONS_DIR,
+  saveWorkspace, loadWorkspace, newId, SESSIONS_DIR, getAssetsDir, getSessionFile,
 } from "../context/sessions.js";
+import JSZip from "jszip";
 import {
   loadSkills, listSkills, readSkillBody, skillsCatalogForPrompt,
   SKILLS_DIR, PROJECT_SKILLS_DIR,
@@ -129,7 +130,11 @@ const SYSTEM_PROMPT_BASE = "Sos Renzo's Loom, un asistente de coding. Tenes herr
 // El catálogo de skills (name+description) se inyecta al system prompt: el cuerpo completo
 // se carga bajo demanda con read_file. Ver src/context/skills.js (formato Agent Skills estándar).
 function buildSystemPrompt() {
-  return SYSTEM_PROMPT_BASE + skillsCatalogForPrompt();
+  const catalog = skillsCatalogForPrompt();
+  if (!catalog) return SYSTEM_PROMPT_BASE;
+  return SYSTEM_PROMPT_BASE + catalog +
+    "\n\n## Skills: invocación proactiva (sin que el usuario lo pida)\n" +
+    "Si la descripción de un skill coincide con lo que el usuario está haciendo, cargalo vos mismo con read_file y seguí su SKILL.md al pie de la letra sin esperar a que el usuario lo mencione. En caso de duda, cargalo igual: es preferible cargar un skill de más que ignorar uno aplicable. No anuncies la carga salvo que el skill lo pida.";
 }
 function isSystemPrompt(msg) {
   if (msg?.role !== "system") return false;
@@ -202,7 +207,56 @@ async function getAvailableModels(force = false) {
       console.error(`getAvailableModels (${entry.provider}):`, e.message);
     }
   }
-  modelsCache = [...byId.values()].sort((a, b) => b.context - a.context);
+  // ---------------------------------------------------------------- jack-of-all-trades
+  // Score heurístico por familia (sin API externa, determinista y gratis):
+  // balancea coding (familias code), reasoning, visión y contexto. No es benchmark oficial:
+  // es un desempate inteligente para elegir el default de pestaña nueva.
+  const JACK_BY_FAMILY = [
+    [/claude/i, 96],
+    [/gpt-5|codex/i, 95],
+    [/gpt-4o/i, 92],
+    [/gemini-3|gemini-4/i, 90],
+    [/gemini/i, 88],
+    [/deepseek-v4|deepseek-r1/i, 86],
+    [/deepseek/i, 84],
+    [/qwen-3|qwen3/i, 84],
+    [/llama-4/i, 82],
+    [/mistral|codestral/i, 80],
+    [/kimi|k3/i, 80],
+    [/glm-4/i, 78],
+    [/perplexity|sonar/i, 60],
+  ];
+  function jackScore(m) {
+    let base = 40;
+    for (const [re, score] of JACK_BY_FAMILY) {
+      if (re.test(m.id)) { base = score; break; }
+    }
+    // Balances rápidos (no dominan, solo desempate):
+    if (m.vision) base += 3;
+    if (m.reasoning) base += 3;
+    if (m.free) base += 2;
+    if (m.context >= 200_000) base += 4;
+    else if (m.context >= 100_000) base += 2;
+    else if (m.context >= 32_000) base += 1;
+    if (m.context && m.context < 16_000) base -= 5;
+    return Math.max(0, Math.min(100, Math.round(base)));
+  }
+
+  // Badge compacto para la lista: ícono(score) por prestación, en dos líneas.
+  function capBadge(m) {
+    const cap = (icon, flag) => (flag ? `${icon}(${m.jack})` : `${icon}`);
+    const toolsS = `🔧(${m.jack})`;
+    const visionS = m.vision ? `👁️(${Math.max(0, m.jack - 3)})` : "👁️";
+    const reasonS = m.reasoning ? `🧠(${Math.max(0, m.jack - 1)})` : "🧠";
+    const freeS = m.free ? `💰(${Math.max(0, m.jack + 2)})` : "💰";
+    return [toolsS, visionS, reasonS, freeS].join(" ");
+  }
+
+  for (const m of byId.values()) {
+    m.jack = jackScore(m);
+    m.capsBadge = capBadge(m);
+  }
+  modelsCache = [...byId.values()].sort((a, b) => b.jack - a.jack);
   if (modelsCache.length) modelsFetchedAt = Date.now();
   return modelsCache;
 }
@@ -501,6 +555,83 @@ ipcMain.handle("delete-saved", (event, id) => {
   return true;
 });
 
+// ---------------------------------------------------------------- IPC: compartir conversación (ZIP)
+// Genera <nombre>-<fecha>.zip con .md legible + .json completo + assets/ (imágenes adjuntas).
+ipcMain.handle("share-tab", async (event, id) => {
+  const tab = tabs.get(id);
+  if (!tab) return { ok: false, error: "Pestaña no encontrada" };
+  if (!tab.history.some((m) => m.role === "user")) return { ok: false, error: "La conversación está vacía" };
+  if (tab.busy) return { ok: false, error: "Esperá a que termine de responder para compartir" };
+
+  persistTab(tab); // externaliza imágenes a <id>.assets/ antes de empaquetar
+  const file = getSessionFile(tab.id);
+  let rawJson = "{}";
+  try { rawJson = fs.readFileSync(file, "utf8"); } catch { return { ok: false, error: "No se pudo leer la sesión" }; }
+
+  const safeName = String(tab.name || "conversacion").replace(/[\\/:*?"<>|\0]/g, "_").replace(/\s+/g, "-").slice(0, 60) || "conversacion";
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const picked = keyForModel(tab.model);
+  const provider = picked?.entry?.provider || "desconocido";
+
+  // Transcript legible en Markdown
+  const lines = [
+    `# ${tab.name}`,
+    "",
+    `- **Modelo:** ${tab.model} (${provider})`,
+    `- **Exportado:** ${new Date().toLocaleString()}`,
+    `- **Mensajes:** ${tab.history.filter((m) => m.role === "user").length} de usuario`,
+    "",
+    "---",
+    "",
+  ];
+  for (const m of tab.history) {
+    if (isSystemPrompt(m)) continue;
+    if (m.role === "user") {
+      const parts = Array.isArray(m.content) ? m.content : [{ type: "text", text: m.content }];
+      const text = parts.filter((p) => p.type === "text").map((p) => p.text).join("\n\n");
+      lines.push(`## 👤 Usuario\n\n${text || "(vacío)"}\n`);
+      for (const p of parts) {
+        if (p.type === "image_url") {
+          const url = p.image_url?.url || "";
+          if (url.startsWith("session-asset:")) lines.push(`\n![adjunto](assets/${url.slice("session-asset:".length)})\n`);
+          else lines.push(`\n🖼️ [imagen adjunta]\n`);
+        }
+        if (p.type === "file") lines.push(`\n📄 ${p.file?.filename || "PDF adjunto"}\n`);
+      }
+    } else if (m.role === "assistant") {
+      if (m.content) lines.push(`## 🤖 Asistente\n\n${m.content}\n`);
+      for (const tc of m.tool_calls || []) {
+        lines.push(`\n> 🔧 **${tc.function?.name || "tool"}**: \`${String(tc.function?.arguments || "").slice(0, 400)}\`\n`);
+      }
+    } else if (m.role === "tool") {
+      lines.push(`\n> → ${String(m.content).slice(0, 1200)}\n`);
+    } else if (m.role === "system") {
+      lines.push(`\n> ⚙️ ${String(m.content)}\n`);
+    }
+  }
+  const md = lines.join("\n");
+
+  const zip = new JSZip();
+  zip.file(`${safeName}.md`, md);
+  zip.file(`${safeName}.json`, rawJson);
+  const assetsDir = getAssetsDir(tab.id);
+  if (fs.existsSync(assetsDir)) {
+    for (const f of fs.readdirSync(assetsDir)) {
+      zip.file(`assets/${f}`, fs.readFileSync(path.join(assetsDir, f)));
+    }
+  }
+  const buf = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+
+  const res = await dialog.showSaveDialog(mainWindow, {
+    title: "Compartir conversación",
+    defaultPath: `${safeName}-${dateStr}.zip`,
+    filters: [{ name: "ZIP", extensions: ["zip"] }],
+  });
+  if (res.canceled) return { ok: false, canceled: true };
+  fs.writeFileSync(res.filePath, buf);
+  return { ok: true, path: res.filePath };
+});
+
 ipcMain.handle("get-models", async (event, force) => getAvailableModels(force));
 
 // ---------------------------------------------------------------- IPC: skills (Agent Skills estándar)
@@ -676,7 +807,20 @@ ipcMain.handle("send-message", async (event, tabId, userMessage, attachments = [
     tab.history.push(buildUserMessage(tab, userMessage, attachments));
     if (tab.autoName) {
       const n = autoNameFrom(userMessage, attachments);
-      if (n) { tab.name = n; emit("tab-updated", tabInfo(tab)); }
+      // Solo fijar el auto-nombre con el primer mensaje de usuario; después queda fijo
+      // (antes cambiaba en cada mensaje hasta que el usuario lo renombraba a mano).
+      if (n && tab.history.filter((m) => m.role === "user").length === 1) {
+        tab.name = n;
+        tab.autoName = false;
+        emit("tab-updated", tabInfo(tab));
+      } else if (n && tab.autoName === false) {
+        // ya fijado: no tocar
+      } else if (tab.autoName && !n) {
+        // sin texto utilizable: seguir esperando el primer mensaje con contenido
+      } else if (tab.autoName) {
+        tab.autoName = false;
+        emit("tab-updated", tabInfo(tab));
+      }
     }
 
     while (!tab.closed && !tab.stopped) {

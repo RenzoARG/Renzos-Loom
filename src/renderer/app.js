@@ -73,7 +73,35 @@ function addMessage(tab, role, text) {
   tab.el.querySelector(".empty")?.remove();
   const div = document.createElement("div");
   div.className = "msg " + role;
-  div.textContent = text;
+  if (role === "system" && text.includes("Cambio de agente")) {
+    // Handoff (pasada de posta): colapsado por defecto para no floodear — click para expandir.
+    const d = document.createElement("details");
+    d.className = "handoff";
+    d.open = false;
+    const summary = document.createElement("summary");
+    summary.textContent = "🔄 Cambio de agente (click para ver detalle)";
+    const body = document.createElement("div");
+    body.textContent = text;
+    body.style.cssText = "white-space: pre-wrap; word-break: break-word; margin-top: 6px;";
+    summary.addEventListener("click", (e) => e.stopPropagation());
+    d.append(summary, body);
+    div.appendChild(d);
+  } else if (role === "tool" || role === "log" || role === "log warn") {
+    // Pensamientos/steps/tools: colapsados por defecto, click para ver el detalle.
+    const d = document.createElement("details");
+    d.className = "thought";
+    d.open = false;
+    const summary = document.createElement("summary");
+    summary.textContent = text.length > 80 ? text.slice(0, 77) + "…" : text;
+    const body = document.createElement("div");
+    body.textContent = text;
+    body.style.cssText = "white-space: pre-wrap; word-break: break-word; margin-top: 6px;";
+    summary.addEventListener("click", (e) => e.stopPropagation());
+    d.append(summary, body);
+    div.appendChild(d);
+  } else {
+    div.textContent = text;
+  }
   tab.el.appendChild(div);
   tab.el.scrollTop = tab.el.scrollHeight;
 }
@@ -543,6 +571,16 @@ function createConfigPanel() {
   return div;
 }
 
+$("share-tab").addEventListener("click", async () => {
+  const t = activeTab();
+  if (!t) return;
+  setStatus("Preparando ZIP…");
+  const res = await window.loom.shareTab(t.id);
+  if (res?.ok) setStatus("ZIP guardado: " + res.path);
+  else if (res?.canceled) setStatus("Compartir cancelado");
+  else setStatus("No se pudo compartir: " + (res?.error || "?"));
+});
+
 function showConfigPanel() {
   const t = activeTab();
   if (!t) return;
@@ -655,7 +693,9 @@ function renderModelOptions() {
     for (const m of g.items.slice(0, 400)) {
       const opt = document.createElement("option");
       opt.value = m.id;
-      opt.textContent = `${m.caps} ${m.id} (${Math.round(m.context / 1000)}k)`;
+      // Dos líneas en el desplegable: caps con score arriba, modelo abajo (como pediste).
+      const badge = m.capsBadge || m.caps || "";
+      opt.textContent = `${badge}\n${m.id} (${Math.round(m.context / 1000)}k) ★${m.jack ?? ""}`;
       og.appendChild(opt);
     }
     modelSelect.appendChild(og);
