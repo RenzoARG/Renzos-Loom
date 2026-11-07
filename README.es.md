@@ -6,7 +6,11 @@ Agente de coding con pestañas, contexto persistente, soporte de imágenes y **A
 
 > 🌐 [English](README.md) · [Español](README.es.md)
 
-## Instalación
+## Instalación (para no desarrolladores)
+
+**No necesitás la línea de comandos.** Andá a [Releases](../../releases), bajá el `.exe` para tu sistema (Windows: `Renzo's Loom Setup x.y.z.exe` para el instalador, o `Renzo's Loom x.y.z.exe` para el portable), hacé doble clic para instalarlo y abrí ⚙️ (Configuración) para agregar la API key.
+
+## Instalación (para desarrolladores)
 
 1. `npm install`
 2. `npm start`

@@ -8,7 +8,11 @@ Coding agent with tabs, persistent context, image support and **Agent Skills (st
 
 ![Electron](https://img.shields.io/badge/Electron-33-blue) ![OpenRouter](https://img.shields.io/badge/OpenRouter-supported-green) ![Agent Skills](https://img.shields.io/badge/Agent%20Skills-standard-green)
 
-## Installation
+## Installation (non-developers)
+
+**You don't need the command line.** Just go to [Releases](../../releases), download the `.exe` for your system (Windows: `Renzo's Loom Setup x.y.z.exe` for the installer, or `Renzo's Loom x.y.z.exe` for the portable), and double-click it. Then open ⚙️ (Settings) and add your API key(s).
+
+## Installation (developers)
 
 1. `npm install`
 2. `npm start`
