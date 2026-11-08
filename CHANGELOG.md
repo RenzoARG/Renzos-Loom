@@ -4,6 +4,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/). V
 
 ---
 
+## [Unreleased]
+
+### Añadido
+- **Tool `browser` (CDP contra Brave/Chrome)**: `list` / `activate` / `close` / `snapshot` / `inspect` / `click` / `fill` / `send` + atajos WhatsApp Web (`whatsapp_chat`, `whatsapp_send`, `whatsapp_send_to` — abre, verifica header, envía y confirma). Requiere Brave con `--remote-debugging-port=9222`.
+- Tool `whatsapp_chat` / `whatsapp_send` como accesos directos con selectores `data-testid` estables.
+
 ## [0.6.0] - 2026-11-07
 
 ### Añadido

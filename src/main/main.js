@@ -5,6 +5,7 @@ import path from "path";
 import fs from "fs";
 import OpenAI from "openai";
 import { tools, executeTool, runBashAsync } from "../tools/index.js";
+import { browserTool } from "../tools/browser.js";
 import {
   saveConversation, loadConversation, listConversations, deleteConversation,
   saveWorkspace, loadWorkspace, newId, SESSIONS_DIR, getAssetsDir, getSessionFile,
@@ -856,7 +857,15 @@ ipcMain.handle("send-message", async (event, tabId, userMessage, attachments = [
         emit("tool-call", { tabId, name: tc.function.name, args });
         emit("progress", { tabId, kind: "tool-start", step, name: tc.function.name, summary: summarizeArgs(tc.function.name, args) });
         const t0 = Date.now();
-        const result = String(tc.function.name === "bash" ? await runBashAsync(args.command, undefined, tab.abort?.signal) : executeTool(tc.function.name, args));
+        const result = String(tc.function.name === "bash"
+          ? await runBashAsync(args.command, undefined, tab.abort?.signal)
+          : tc.function.name === "browser"
+            ? await browserTool(args, tab.abort?.signal)
+            : tc.function.name === "whatsapp_chat"
+              ? await browserTool({ action: "whatsapp-chat", chatName: args.chatName, tabId: args.tabId }, tab.abort?.signal)
+              : tc.function.name === "whatsapp_send"
+                ? await browserTool({ action: "whatsapp-send", text: args.text, tabId: args.tabId }, tab.abort?.signal)
+                : executeTool(tc.function.name, args));
         emit("progress", { tabId, kind: "tool-done", step, name: tc.function.name, ms: Date.now() - t0, ok: !result.startsWith("Error:"), chars: result.startsWith(IMG_PREFIX) ? 0 : result.length });
 
         if (result.startsWith(IMG_PREFIX)) {

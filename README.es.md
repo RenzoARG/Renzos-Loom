@@ -58,6 +58,7 @@ Agente de coding con pestañas, contexto persistente, soporte de imágenes y **A
 - **Skills (v0.5.0)**: Agent Skills estándar — una carpeta por skill con su `SKILL.md` (frontmatter `name` + `description`). Trae 20 bundled (4 propios + 10 de [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) + 6 de [obra/superpowers](https://github.com/obra/superpowers), todos MIT, curados para las tools de Loom). Sumá las tuyas en `%APPDATA%/Renzo's Loom/skills/` (fuera del `.exe`, se autogenera, gana sobre bundled en choque de nombre). Configuración ⚙️ → **Skills**: muestra el path, **📁 Abrir carpeta de skills** y **↻ Recargar skills**. El agente ve un catálogo barato (name+description) y carga el `SKILL.md` completo bajo demanda con `read_file`. Detalle en `src/skills/README.md`.
 - **Compartir (v0.6.0)**: 📤 junto a ⚙️ exporta la pestaña activa como ZIP (`*.md` + `*.json` + `assets/`).
 - **Scoring (v0.6.0)**: cada modelo lleva un score jack-of-all-trades (heurística por familia, sin API externa). El desplegable lo muestra inline por prestación, ordenado mejor-primero, y las pestañas nuevas usan el mejor balance.
+- **Browser (sin publicar)**: tool `browser` (CDP contra Brave con `--remote-debugging-port=9222`) + atajos WhatsApp Web (`whatsapp_chat` / `whatsapp_send` / `whatsapp_send_to` con verificación de header). Ver CHANGELOG `Unreleased`.
 
 ## Créditos
 

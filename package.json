@@ -63,7 +63,8 @@
   "dependencies": {
     "dotenv": "^16.4.0",
     "jszip": "^3.10.1",
-    "openai": "^4.0.0"
+    "openai": "^4.0.0",
+    "ws": "^8.22.2"
   },
   "devDependencies": {
     "electron": "^33.0.0",
