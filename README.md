@@ -57,10 +57,11 @@ Coding agent with tabs, persistent context, image support and **Agent Skills (st
   the request, the retry wait or the running command. What was already done (files written, commands run) is **not
   undone**; the model is told that you stopped it.
 - Everything is saved in `sessions/` (one JSON per conversation; images in `<id>.assets/`; API keys in `_api_keys.json`).
-- **Skills (v0.5.0)**: standard Agent Skills — one folder per skill with a `SKILL.md` (`name` + `description` frontmatter). Ships with 20 bundled skills (4 own + 10 from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) + 6 from [obra/superpowers](https://github.com/obra/superpowers), all MIT, curated for Loom's tools). Add your own in `%APPDATA%/Renzo's Loom/skills/` (outside the `.exe`, auto-created, wins over bundled on name clash). Settings ⚙️ → **Skills** shows the path, **📁 Open skills folder** and **↻ Reload skills**. The agent sees a cheap catalog (name + description) and loads the full `SKILL.md` on demand via `read_file`. Details in `src/skills/README.md`.
+- **Skills (v0.5.0)**: standard Agent Skills — one folder per skill with a `SKILL.md` (`name` + `description` frontmatter). Ships with 21 bundled skills (5 own + 10 from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) + 6 from [obra/superpowers](https://github.com/obra/superpowers), all MIT, curated for Loom's tools). Add your own in `%APPDATA%/Renzo's Loom/skills/` (outside the `.exe`, auto-created, wins over bundled on name clash). Settings ⚙️ → **Skills** shows the path, **📁 Open skills folder** and **↻ Reload skills**. The agent sees a cheap catalog (name + description) and loads the full `SKILL.md` on demand via `read_file`. Details in `src/skills/README.md`.
 - **Sharing (v0.6.0)**: 📤 next to ⚙️ exports the active tab as a ZIP (`*.md` + `*.json` + `assets/`).
 - **Model scoring (v0.6.0)**: every model carries a jack-of-all-trades score (heuristic by family, no external API). The dropdown shows it inline per cap, sorted best-first, and new tabs default to the best balance.
-- **Browser (v0.7.0)**: `browser` tool (CDP against Brave with `--remote-debugging-port=9222`) + WhatsApp Web shortcuts (`whatsapp_chat` / `whatsapp_send` / `whatsapp_send_to` with header verification). See CHANGELOG `0.7.0`.
+- **Browser (v0.7.0)**: `browser` tool (CDP against Brave with `--remote-debugging-port=9222`).
+- **WhatsApp Web (unreleased)**: `whatsapp_web` — one tool for all WhatsApp Web automation (`list`/`open`/`read`/`send`/`send-to`/`search`/`scroll`/`status`/`transcribe`/`extract-audio`). Voice notes are transcribed to text (free, up to 5/hour and 80 s of audio, via SpeakApp — the audio is sent to a third party). See CHANGELOG.
 
 ## Icon
 

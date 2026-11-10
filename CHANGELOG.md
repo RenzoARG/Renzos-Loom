@@ -4,6 +4,20 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/). V
 
 ---
 
+## [Unreleased]
+
+### Añadido
+- **Tool `whatsapp_web`** (`src/tools/whatsapp-web.js`): todo lo de WhatsApp Web en una sola tool — `list`, `open`, `read`, `send`, `send-to`, `transcribe`, `extract-audio`, `search`, `scroll`, `status` (+ `snapshot`/`click`/`fill` genéricas) — delega en las acciones `whatsapp-*` de `src/tools/browser.js`.
+- **Skill `whatsapp-web`** (`src/skills/whatsapp-web/SKILL.md`): instrucciones estándar para que el agente opere WhatsApp Web con esas tools (con cuál confirmar envíos y cómo transcribir notas de voz).
+- **Transcripción de notas de voz (`transcribe`)**: usa SpeakApp (WAV mono 16 kHz posteado desde una pestaña background; la página resuelve su propio challenge anti-bot). Límites del endpoint: 80 s por nota y 5 solicitudes/hora. El audio sale a un servidor tercero. La extracción prueba primero el `<audio>` blob, luego el Cache Storage de WhatsApp (`lru-media-array-buffer-cache`, donde WhatsApp decodifica el opus para pintar el waveform) con match por duración, sin reproducir la nota; Play queda como último recurso (marca como escuchada).
+
+### Cambiado
+- `whatsapp_chat` / `whatsapp_send` / `whatsapp_transcribe` se unificaron dentro de `whatsapp_web` (eliminadas como tools separadas).
+- Se eliminó el backend Voqua de `transcribe` (límite de 3/día) y se reemplazó por SpeakApp.
+
+### Arreglado
+- Notas de voz: la duración se parseaba con un regex dentro de un template literal mal escapado (`\d` → `d`), por lo que el matching por duración con el Cache Storage nunca funcionaba y el tool caía al fallback Play (marcando la nota como escuchada). Ahora funciona por cache sin tocar la nota.
+
 ## [0.7.0] - 2026-11-08
 
 ### Añadido

@@ -72,6 +72,7 @@ Propios de Loom:
 - `file-analyzer` — Analizar archivos y extraer estructura/contenido.
 - `project-summary` — Resumir el proyecto actual rápidamente.
 - `conversation-browser` — Navegar y buscar en conversaciones guardadas.
+- `whatsapp-web` — Operar WhatsApp Web (Brave CDP): abrir chats, leer mensajes, enviar texto (con confirmación), transcribir notas de voz.
 
 Vendorizados (MIT, selección curada compatible con las tools de Loom: `bash`/`read_file`/
 `write_file`/`list_dir`/`grep`, sin MCP ni subagentes):

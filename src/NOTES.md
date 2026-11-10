@@ -125,4 +125,56 @@ Formato **Agent Skills** (compatible con agenteskills.io / Claude Code): cada sk
   requesting-code-review, systematic-debugging, verification-before-completion, writing-plans).
   TDD dedupe: se conserva el de Addy. Excluidas las que requieren MCP/subagentes/metas.
 
+## 8. WhatsApp Web: tool unificada (`whatsapp_web`)
+
+Todo lo que interactúa con la página de WhatsApp Web vive en una sola tool, `whatsapp_web`
+(`src/tools/whatsapp-web.js`), que delega en las acciones `whatsapp-*` de `src/tools/browser.js`.
+Antes existían `whatsapp_chat`, `whatsapp_send` y `whatsapp_transcribe` por separado: quedaron unificadas.
+
+Acciones (`action`):
+- `list`: lista chats (nombre, último mensaje, hora, no leídos).
+- `open`: abre un chat por nombre (`chatName`).
+- `read`: devuelve los últimos `limit` mensajes del chat abierto (texto + 🎤/🖼️).
+- `send`: envía `text` en el chat abierto.
+- `send-to`: abre un chat y envía (`chatName` + `text`).
+- `transcribe`: transcribe notas de voz (`index`, `limit`).
+- `extract-audio`: devuelve el blob de audio de una nota en base64 (sin transcribir).
+- `search`: enfoca el buscador con `chatName`/`query`.
+- `scroll`: desplaza el chat (`dy`, default 600).
+- `status`: chat abierto + estado del composer/buscador.
+- `snapshot`/`click`/`fill`/`navigate`/`reload`: genéricas por si el modelo necesita algo puntual.
+
+### cdpEval: convención de escapes en los template literals (importante)
+Las expresiones que van a `cdpEval(t, expr)` están en **template literals** (`\`…\`); todo lo
+que el browser recibe es el QUE YA INTERPRETÓ Node. Reglas:
+- `\b` en un template literal es U+0008 (backspace), **no** word-boundary → usar `\\b` o evitarlo.
+- `\d` en un template literal es `d` (no es un escape) → para regex usar `\\d` o escribir los
+  caracteres como `[0-9]`.
+- `\n` dentro de un template literal es una nueva línea real (va como `\\n` si se quiere un
+  backslash-n literal para el DOM).
+- Probar SIEMPRE la regex dentro del template literal (una mismatch silenciosa hace que `\w+`
+  funcione pero `\b` no: el código no lanza error, simplemente matchea nunca).
+
+### Transcripción de notas de voz (SpeakApp)
+- Flujo: `open` (abrir chat) → `transcribe`. El audio sale de la PC a speakapp.com; la pestaña
+  de destino se abre en background y se cierra sola al terminar.
+- **Cómo se obtiene el audio (sin reproducir la nota, en este orden):**
+  1. `<audio>` con `src` blob: (MIME `audio/ogg; codecs=opus`) — sólo si la nota ya se descargó.
+  2. **Cache Storage** `lru-media-array-buffer-cache`: WhatsApp decodifica el opus para pintar
+     el waveform y cache-a los bytes desencriptados; le hace match por duración (±2 s) con la
+     nota visible. El sender **no** verá la nota como reproducida.
+  3. Play como último recurso (marca la nota como escuchada — el usuario lo aceptó; se pausa
+     apenas arranca y se mutea).
+- `src/tools/speakapp.js` abre `https://speakapp.com/t/tools/es/transcripcion-mensaje-voz-whatsapp`
+  en una pestaña background (`Target.createTarget background:true`) y desde adentro evalúa un script
+  que decodifica el audio (`decodeAudioData` + `OfflineAudioContext` a 16 kHz mono), arma un WAV
+  PCM 16-bit y hace `POST /t/api/transcribe-demo?pageId=tools-default`. El `window.fetch` de esa
+  página está parcheado por su propio JS para meter los headers `x-is-human` del challenge
+  anti-bot → **sólo funciona llamado desde adentro de la página** (un fetch directo devuelve 403).
+- **Límites del endpoint tools-default**: **80 s de audio por nota** (más largo → `duration_exceeded`)
+  y **5 solicitudes/hora** (`x-ratelimit-*`, 429 al pasarse). Español + 50 idiomas (autodetect).
+- Respuesta JSON `{ segments, language, text }`. Si el contexto se destruye justo al evaluar
+  (la página aún termina navegación), `speakappTranscribe` reintenta una vez tras 1.5 s.
+- Antes existía un backend Voqua (3/día); se eliminó por SpeakApp (mejor cupo y sin cambios de UI).
+
 
