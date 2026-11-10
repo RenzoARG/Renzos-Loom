@@ -4,7 +4,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/). V
 
 ---
 
-## [Unreleased]
+## [0.8.0] - 2026-11-10
 
 ### Añadido
 - **Tool `whatsapp_web`** (`src/tools/whatsapp-web.js`): todo lo de WhatsApp Web en una sola tool — `list`, `open`, `read`, `send`, `send-to`, `transcribe`, `extract-audio`, `search`, `scroll`, `status` (+ `snapshot`/`click`/`fill` genéricas) — delega en las acciones `whatsapp-*` de `src/tools/browser.js`.

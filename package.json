@@ -1,7 +1,7 @@
 {
   "name": "renzos-loom",
   "productName": "Renzo's Loom",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Coding agent with tabs, persistent context, image support, multiple API keys and Agent Skills",
   "author": "RenzoARG",
   "main": "src/main/main.js",

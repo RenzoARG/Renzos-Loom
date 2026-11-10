@@ -59,7 +59,7 @@ Agente de coding con pestañas, contexto persistente, soporte de imágenes y **A
 - **Compartir (v0.6.0)**: 📤 junto a ⚙️ exporta la pestaña activa como ZIP (`*.md` + `*.json` + `assets/`).
 - **Scoring (v0.6.0)**: cada modelo lleva un score jack-of-all-trades (heurística por familia, sin API externa). El desplegable lo muestra inline por prestación, ordenado mejor-primero, y las pestañas nuevas usan el mejor balance.
 - **Browser (v0.7.0)**: tool `browser` (CDP contra Brave con `--remote-debugging-port=9222`).
-- **WhatsApp Web (unreleased)**: `whatsapp_web` — una sola tool para automatizar WhatsApp Web (`list`/`open`/`read`/`send`/`send-to`/`search`/`scroll`/`status`/`transcribe`/`extract-audio`). Las notas de voz se transcriben a texto (gratis, hasta 5/hora y 80 s de audio, vía SpeakApp — el audio sale a un servidor tercero). Ver CHANGELOG.
+- **WhatsApp Web (v0.8.0)**: `whatsapp_web` — una sola tool para automatizar WhatsApp Web (`list`/`open`/`read`/`send`/`send-to`/`search`/`scroll`/`status`/`transcribe`/`extract-audio`). Las notas de voz se transcriben a texto (gratis, hasta 5/hora y 80 s de audio, vía SpeakApp — el audio sale a un servidor tercero). Ver CHANGELOG `0.8.0`.
 
 ## Créditos
 
