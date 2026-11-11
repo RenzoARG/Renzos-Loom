@@ -33,6 +33,8 @@
   "fWeb": "Internet",
   "fFree": "Gratis",
   "verbose": "Detalle de pasos",
+  "notificationVolume": "Volumen de notificación",
+  "notificationVolumeHint": "0 = silencio · 100 = máximo. Suelta el slider para escuchar la prueba.",
   "stop": "Detener",
   "stopping": "Deteniendo…",
   "apiKeysTitle": "API Keys",

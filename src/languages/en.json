@@ -33,6 +33,8 @@
   "fWeb": "Internet",
   "fFree": "Free",
   "verbose": "Step details",
+  "notificationVolume": "Notification volume",
+  "notificationVolumeHint": "0 = silent · 100 = max. Release the slider to hear the test sound.",
   "stop": "Stop",
   "stopping": "Stopping…",
   "apiKeysTitle": "API Keys",

@@ -16,7 +16,33 @@ que estar lanzado con `--remote-debugging-port=9222` (ver NOTES.md §8).
 ## Reglas
 
 - **Antes de enviar cualquier mensaje, pedile confirmación explícita al usuario** (y mostrá
-  el texto exacto). El usuario es la autoridad de qué se manda y a quién.
+  el texto exacto y el destino exacto). El usuario es la autoridad de qué se manda y a quién.
+- **Paso obligatorio de confirmación**: `send` y `send-to` sin `confirmed:true` devuelven un
+  preview y no envían nada. Usá `confirmed:true` únicamente cuando el usuario ya aprobó en el
+  chat, con palabras claras ("enviá", "mandá", "ok, reenviá"), el texto exacto y el destino.
+- **Nunca** uses `click`, `fill` o `send` para reenviar un audio/mensaje de un chat a otro:
+  el envío tiene que pasar por `send`/`send-to` con la confirmación de arriba.
+- **Nunca reportes "quién dijo" inventando ni por contexto visual**: usá el `sender`, el
+  `timestamp` y, si es una respuesta, el `replyTo` que devuelven `read` y `transcribe`.
+  El remitente citado dentro de un quote NO es el remitente del mensaje. Si vienen como
+  "desconocido", decilo así.
+- Si el usuario nombra un chat (por ejemplo "el grupo Kancer"), pasá siempre `chatName` a
+  `read`, `message`, `transcribe` o `extract-audio` para que la tool abra y verifique ese chat exacto;
+  no trabajes sobre el chat que quedó abierto de antes.
+- "Mensaje" es un concepto genérico: puede ser texto o audio. "Audio" es específico: solo nota de voz.
+- Si el usuario pide "el último mensaje" (o "un mensaje"), usá `message`, no `transcribe`.
+  Actúa según el `type` que devuelva:
+  - `type="text"` → devolvé el texto con `sender`, `time` y `replyTo` si viene.
+  - `type="audio"` → avisá que es una nota de voz y usá `transcribe` con confirmación por el envío a SpeakApp.
+  - `type="image"`/`"other"` → describí lo que se ve y no inventes contenido.
+- Si el usuario pide "el último audio", usá `transcribe` (con `sender` si nombró a alguien) o
+  `message` primero si querés confirmar que el último mensaje es realmente un audio.
+- Si pide varios mensajes, usá `read`.
+- Si el usuario pide "el audio de tal persona" o "quién dijo", usá el parámetro `sender`
+  (por ejemplo `sender:"Aarón"`) en lugar de tomar ciegamente el último audio.
+- Para informar un audio, usá siempre separadores (`|` o saltos de línea), nunca pegues
+  remitente y destinatario sin espacio. Formato recomendado:
+  `Audio de: <sender> | Respuesta a: <replyTo o "—"> | Hora: <time> | Grupo: <chat>` seguido del texto.
 - **Nunca** abras chats o leas mensajes sin que el usuario lo pida.
 - **Nunca** reproduzcas una nota de voz para "escucharla" sin permiso: la tool `whatsapp_web`
   con `action=transcribe` ya NO reproduce la nota (usa el Cache Storage del navegador donde
@@ -41,11 +67,12 @@ que estar lanzado con `--remote-debugging-port=9222` (ver NOTES.md §8).
 |---|---|---|
 | `list` | — | Lista chats (nombre, último mensaje, hora, no leídos) |
 | `open` | `chatName` | Abre el chat (re-busca en el buscador si no está visible) |
-| `read` | `limit` (default 10) | Últimos N mensajes del chat abierto (+🎤/🖼️) |
-| `send` | `text` | Envía texto en el chat abierto |
-| `send-to` | `chatName`, `text` | Abre el chat y envía (confirmar antes) |
-| `transcribe` | `index` (0=última), `limit` | Transcribe notas de voz con SpeakApp |
-| `extract-audio` | `index` | Devuelve el blob en base64 (~costoso en tokens; preferí `transcribe`) |
+| `read` | `limit`, `chatName?`, `sender?` | Últimos N mensajes (+🎤/🖼️); verifica el chat si pasás `chatName` |
+| `message` | `chatName?` | Último mensaje visible (texto o audio); incluye type, sender, time, replyTo. Alias compatible: `read-last` |
+| `send` | `text`, `confirmed:true` | Envía texto tras confirmación; sin `confirmed` devuelve preview sin enviar |
+| `send-to` | `chatName`, `text`, `confirmed:true` | Abre y envía tras confirmación; sin `confirmed` devuelve preview sin abrir ni enviar |
+| `transcribe` | `chatName?`, `sender?`, `index` (0=última), `limit` | Transcribe y reporta `chat`, `sender`, `time` de cada nota |
+| `extract-audio` | `chatName?`, `sender?`, `index` | Devuelve el blob en base64 + metadata; preferí `transcribe` |
 | `search` | `chatName` | Enfoca el buscador |
 | `scroll` | `dy` | Desplaza el chat |
 | `status` | — | Chat abierto + estado del composer/buscador |
@@ -54,17 +81,21 @@ que estar lanzado con `--remote-debugging-port=9222` (ver NOTES.md §8).
 ## Parámetros de la tool
 
 - `action` (required, string): una de las acciones de arriba.
-- `chatName` (string): nombre del chat (open/search/send-to).
+- `chatName` (string): nombre del chat (open/search/send-to; también read/message/transcribe/extract-audio). Si se pasa, la tool lo abre y verifica el header antes de operar.
 - `text` (string): texto a enviar o rellenar.
 - `limit` (number): mensajes/notas a leer (read/transcribe).
 - `index` (number): 0 = última nota de voz, 1 = anterior…
+- `sender` (string): filtra mensajes/notas por remitente (ej. `"Aarón"`); opcional.
+- `confirmed` (boolean): `true` solo después de que el usuario aprobó explícitamente el texto y el destino. Sin esto, `send`/`send-to` no envían.
 - `dy` (number): píxeles de scroll.
 - `tabId` (string opcional): id de pestaña; por defecto la primera.
 
 ## Ejemplo
 
 ```
-whatsapp_web({action:"open", chatName:"TiendaSucursal"})
-whatsapp_web({action:"read", limit:5})
-whatsapp_web({action:"transcribe", index:0, limit:1})
+whatsapp_web({action:"open", chatName:"Kancer"})
+whatsapp_web({action:"message", chatName:"Kancer"})
+whatsapp_web({action:"read", chatName:"Kancer", limit:5})
+whatsapp_web({action:"transcribe", chatName:"Kancer", index:0, limit:1})
+# Si el usuario aprobó explícitamente: whatsapp_web({action:"send", text:"ok", confirmed:true})
 ```

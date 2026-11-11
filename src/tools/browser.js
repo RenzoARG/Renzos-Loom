@@ -209,6 +209,22 @@ export async function browserTool(args, signal) {
     return pt.title;
   }
 
+  const isConfirmed = (a) => a?.confirmed === true || a?.confirm === true;
+  const getChatHeader = async (t) => {
+    const h = await cdpEval(t, `(() => document.querySelector('[data-testid="conversation-info-header-chat-title"]')?.textContent || document.querySelector('header span[title]')?.getAttribute("title") || "")()`);
+    return String(h?.result?.value || "").trim();
+  };
+  async function openAndVerifyChat(t, name) {
+    const chatRes = await browserTool({ action: "whatsapp-chat", chatName: name, tabId: t.id });
+    if (!chatRes.startsWith("ok")) return { ok: false, message: chatRes };
+    await new Promise((r) => setTimeout(r, 800));
+    const header = await getChatHeader(t);
+    if (!header.toLowerCase().includes(name.toLowerCase())) {
+      return { ok: false, message: `abortado: header es "${header}", esperado "${name}" (no toqué nada)` };
+    }
+    return { ok: true, chatRes, header };
+  }
+
   async function clearSearchInput(t) {
     await cdpEval(t, `(() => {
       const input = document.querySelector('#side input') || document.querySelector('[data-testid="search-input"]') || document.querySelector('input[placeholder*="Buscar"]') || document.querySelector('input[placeholder*="Search"]');
@@ -246,7 +262,12 @@ export async function browserTool(args, signal) {
   if (action === "whatsapp-send") {
     const t = pick();
     if (!t?.webSocketDebuggerUrl) return "Error: pestaña no encontrada (usá action:list primero)";
-    const text = String(args.text || "").replace(/`/g, "\\`").replace(/\$/g, "\\$");
+    const rawText = String(args.text || "");
+    if (!isConfirmed(args)) {
+      const header = await getChatHeader(t);
+      return `No enviado. Preview para "${header || "chat abierto"}":\n${rawText}\nPara enviar, pedile confirmación explícita al usuario y volvé a llamar con confirmed:true.`;
+    }
+    const text = rawText.replace(/`/g, "\\`").replace(/\$/g, "\\$");
     // Mismo selector que el snapshot: footer [contenteditable='true'] (Composer: OK). Sin primer intento fallido.
     const r = await cdpEval(t, `(() => {
       const boxes = document.querySelectorAll("[contenteditable='true']");
@@ -291,17 +312,15 @@ export async function browserTool(args, signal) {
     if (!t?.webSocketDebuggerUrl) return "Error: pestaña no encontrada (usá action:list primero)";
     const name = String(args.chatName || "").trim();
     if (!name) return "Error: falta chatName";
-    try { await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/activate/${t.id}`, { signal: AbortSignal.timeout(5_000) }); } catch {}
-    const chatRes = await browserTool({ action: "whatsapp-chat", chatName: name, tabId: t.id });
-    if (!chatRes.startsWith("ok")) return chatRes;
-    await new Promise((r) => setTimeout(r, 800));
-    const h = await cdpEval(t, `(() => document.querySelector('[data-testid="conversation-info-header-chat-title"]')?.textContent || document.querySelector('header span[title]')?.getAttribute("title") || "")()`);
-    const header = String(h?.result?.value || "").toLowerCase();
-    if (!header.includes(name.toLowerCase())) {
-      return `abortado: header es "${header}", esperado "${name}" (no envié nada)`;
+    const rawText = String(args.text || "");
+    if (!isConfirmed(args)) {
+      return `No enviado. Preview para "${name}":\n${rawText}\nPara enviar, pedile confirmación explícita al usuario y volvé a llamar con confirmed:true.`;
     }
-    const sent = await browserTool({ action: "whatsapp-send", text: args.text, tabId: t.id });
-    return `${chatRes} | ${sent}`;
+    try { await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/activate/${t.id}`, { signal: AbortSignal.timeout(5_000) }); } catch {}
+    const opened = await openAndVerifyChat(t, name);
+    if (!opened.ok) return opened.message;
+    const sent = await browserTool({ action: "whatsapp-send", text: rawText, tabId: t.id, confirmed: true });
+    return `${opened.chatRes} | ${sent}`;
   }
 
   if (action === "inspect") {
@@ -381,7 +400,34 @@ export async function browserTool(args, signal) {
           const inner = (c.innerText || "");
           const dm = inner.match(/(\\d{1,2}):(\\d{2})(?!\\d)/);
           const duration = dm ? parseInt(dm[1], 10) * 60 + parseInt(dm[2], 10) : null;
-          notes.push({ src: audio ? (audio.currentSrc || audio.src || "") : "", containerIdx: containers.indexOf(c), duration });
+          const outgoing = !!c.querySelector('.message-out, [data-icon="tail-out"]');
+          const quote = c.querySelector('[data-testid="quoted-message"], .quoted-mention, div[aria-label*="Quoted message" i]');
+          const preEls = [...c.querySelectorAll('[data-pre-plain-text]')];
+          const preEl = preEls.find((el) => !quote || !quote.contains(el)) || null;
+          const pre = (preEl && (preEl.getAttribute("data-pre-plain-text") || preEl.textContent || "")) || (c.hasAttribute("data-pre-plain-text") ? c.getAttribute("data-pre-plain-text") : "") || "";
+          const authorCandidates = [...c.querySelectorAll('[data-testid="author"], span[data-testid="author"]')];
+          const authorEl = authorCandidates.find((a) => !quote || !quote.contains(a));
+          let sender = "";
+          let timestamp = "";
+          if (pre) {
+            const open = pre.indexOf("[");
+            const close = pre.indexOf("]", open + 1);
+            const after = (close >= 0 ? pre.slice(close + 1) : pre).trim();
+            const colon = after.lastIndexOf(":");
+            if (colon > 0) sender = after.slice(0, colon).trim();
+            timestamp = (open >= 0 && close > open ? pre.slice(open + 1, close).trim() : pre.trim());
+          }
+          if (!timestamp) {
+            const meta = c.querySelector('[data-testid="msg-meta"]');
+            const metaText = meta ? (meta.innerText || meta.textContent || "") : "";
+            const mm = metaText.match(/(\\d{1,2}:\\d{2})/);
+            if (mm) timestamp = mm[1];
+          }
+          if (!sender && authorEl) sender = (authorEl.textContent || "").trim();
+          if (!sender) sender = outgoing ? "Yo" : "desconocido";
+          const quotedAuthorEl = quote && quote.querySelector('[data-testid="author"], span[data-testid="author"]');
+          const quotedSender = quotedAuthorEl ? (quotedAuthorEl.textContent || "").trim() : "";
+          notes.push({ src: audio ? (audio.currentSrc || audio.src || "") : "", containerIdx: containers.indexOf(c), duration, sender, timestamp, outgoing, quotedSender });
         }
       }
       return notes;
@@ -537,31 +583,46 @@ export async function browserTool(args, signal) {
   if (action === "whatsapp-transcribe") {
     const t = pick();
     if (!t?.webSocketDebuggerUrl) return "Error: pestaña no encontrada (usá action:list primero)";
+    const targetChat = String(args.chatName || "").trim();
+    if (targetChat) {
+      const opened = await openAndVerifyChat(t, targetChat);
+      if (!opened.ok) return opened.message;
+    }
+    const senderFilter = String(args.sender || "").trim().toLowerCase();
     const limit = Math.max(1, Math.min(20, Number(args.limit || 1)));
     const index = Math.max(0, Number(args.index || 0));
+    const header = await getChatHeader(t);
 
-    const notes = await collectVoiceNotes(t);
+    let notes = await collectVoiceNotes(t);
     if (!Array.isArray(notes) || !notes.length) {
-      return "No se encontraron notas de voz en el chat abierto. Asegurate de que el chat tenga audios visibles (scrollá hacia la nota si hace falta).";
+      return `No se encontraron notas de voz en "${header || "el chat abierto"}". Asegurate de que el chat tenga audios visibles (scrollá hacia la nota si hace falta).`;
     }
-    if (index >= notes.length) return `Solo hay ${notes.length} nota(s) de voz visibles; usá index entre 0 y ${notes.length - 1}.`;
+    if (senderFilter) notes = notes.filter((n) => String(n.sender || "").toLowerCase().includes(senderFilter));
+    if (!notes.length) return `No se encontraron notas de voz de "${args.sender}" en "${header || "el chat abierto"}".`;
+    if (index >= notes.length) return `Solo hay ${notes.length} nota(s) de voz de "${args.sender || "cualquier persona"}" visibles; usá index entre 0 y ${notes.length - 1}.`;
 
     // 2) target: index 0 = la última, 1 = la anterior, etc. limit = cuántas hacia atrás.
     const start = Math.max(0, notes.length - index - limit);
     const targets = notes.slice(start, notes.length - index);
+    const base = notes.length - index - targets.length;
 
     const out = [];
     for (let i = 0; i < targets.length; i++) {
       const f = await resolveNoteAudio(t, targets[i]);
+      const note = targets[i];
+      const metaParts = [`chat="${header || "?"}"`, `sender="${note.sender || "desconocido"}"`];
+      if (note.timestamp) metaParts.push(`time="${note.timestamp}"`);
+      if (note.quotedSender) metaParts.push(`replyTo="${note.quotedSender}"`);
+      const meta = metaParts.join(" | ");
       if (!f) {
-        out.push(`#${start + i + 1}: no se pudo obtener el audio (ni en caché de WhatsApp ni reproduciéndolo).`);
+        out.push(`#${base + i + 1} (${meta}): no se pudo obtener el audio (ni en caché de WhatsApp ni reproduciéndolo).`);
         continue;
       }
       try {
         const { text, language } = await speakappTranscribe({ base64: f.base64, mime: f.type }, signal);
-        out.push(`#${start + i + 1} (${(f.size / 1024).toFixed(0)} KB, ${language || "?"}): ${text || "(sin habla detectada)"}`);
+        out.push(`#${base + i + 1} (${meta}; ${(f.size / 1024).toFixed(0)} KB, ${language || "?"}): ${text || "(sin habla detectada)"}`);
       } catch (e) {
-        out.push(`#${start + i + 1}: error de transcripción: ${e.message}`);
+        out.push(`#${base + i + 1} (${meta}): error de transcripción: ${e.message}`);
       }
     }
     return "Transcripción de nota(s) de voz (SpeakApp):\n" + out.join("\n");
@@ -593,6 +654,12 @@ export async function browserTool(args, signal) {
   if (action === "whatsapp-read") {
     const t = pick();
     if (!t?.webSocketDebuggerUrl) return "Error: pestaña no encontrada (usá action:list primero)";
+    const targetChat = String(args.chatName || "").trim();
+    if (targetChat) {
+      const opened = await openAndVerifyChat(t, targetChat);
+      if (!opened.ok) return opened.message;
+    }
+    const senderFilter = String(args.sender || "").trim().toLowerCase();
     const limit = Math.max(1, Math.min(100, Number(args.limit || 10)));
     const r = await cdpEval(t, `(() => {
       const containers = [...document.querySelectorAll('[data-testid="msg-container"]')];
@@ -600,12 +667,106 @@ export async function browserTool(args, signal) {
       return slice.map(c => {
         const audio = c.querySelector('audio');
         const img = c.querySelector('img');
-        return { audio: !!audio, image: !!img, text: (c.innerText || "").slice(0, 1200) };
+        const outgoing = !!c.querySelector('.message-out, [data-icon="tail-out"]');
+        const quote = c.querySelector('[data-testid="quoted-message"], .quoted-mention, div[aria-label*="Quoted message" i]');
+        const preEls = [...c.querySelectorAll('[data-pre-plain-text]')];
+        const preEl = preEls.find((el) => !quote || !quote.contains(el)) || null;
+        const pre = (preEl && (preEl.getAttribute("data-pre-plain-text") || preEl.textContent || "")) || (c.hasAttribute("data-pre-plain-text") ? c.getAttribute("data-pre-plain-text") : "") || "";
+        const authorCandidates = [...c.querySelectorAll('[data-testid="author"], span[data-testid="author"]')];
+        const authorEl = authorCandidates.find((a) => !quote || !quote.contains(a));
+        let sender = "";
+        let timestamp = "";
+        if (pre) {
+          const open = pre.indexOf("[");
+          const close = pre.indexOf("]", open + 1);
+          const after = (close >= 0 ? pre.slice(close + 1) : pre).trim();
+          const colon = after.lastIndexOf(":");
+          if (colon > 0) sender = after.slice(0, colon).trim();
+          timestamp = (open >= 0 && close > open ? pre.slice(open + 1, close).trim() : "");
+        }
+        if (!timestamp) {
+          const meta = c.querySelector('[data-testid="msg-meta"]');
+          const metaText = meta ? (meta.innerText || meta.textContent || "") : "";
+          const mm = metaText.match(/(\\d{1,2}:\\d{2})/);
+          if (mm) timestamp = mm[1];
+        }
+        if (!sender && authorEl) sender = (authorEl.textContent || "").trim();
+        if (!sender) sender = outgoing ? "Yo" : "desconocido";
+        const quotedAuthorEl = quote && quote.querySelector('[data-testid="author"], span[data-testid="author"]');
+        const quotedSender = quotedAuthorEl ? (quotedAuthorEl.textContent || "").trim() : "";
+        return { audio: !!audio, image: !!img, sender, timestamp, quotedSender, text: (c.innerText || "").slice(0, 1200) };
       });
     })()`);
     const msgs = r?.result?.value;
     if (!Array.isArray(msgs) || !msgs.length) return "No se encontraron mensajes en el chat abierto.";
-    return msgs.map((m) => `${m.text}${m.audio ? " 🎤" : ""}${m.image ? " 🖼️" : ""}`).join("\n---\n");
+    const filtered = senderFilter ? msgs.filter((m) => String(m.sender || "").toLowerCase().includes(senderFilter)) : msgs;
+    if (!filtered.length) return `No se encontraron mensajes de "${args.sender}" en el chat abierto.`;
+    const header = await getChatHeader(t);
+    const prefix = header ? `Chat: ${header}\n` : "";
+    return prefix + filtered.map((m) => `[${m.sender}${m.timestamp ? ` · ${m.timestamp}` : ""}]${m.quotedSender ? ` (reply to ${m.quotedSender})` : ""} ${m.text}${m.audio ? " 🎤" : ""}${m.image ? " 🖼️" : ""}`).join("\n---\n");
+  }
+
+  if (action === "whatsapp-read-last") {
+    const t = pick();
+    if (!t?.webSocketDebuggerUrl) return "Error: pestaña no encontrada (usá action:list primero)";
+    const targetChat = String(args.chatName || "").trim();
+    if (targetChat) {
+      const opened = await openAndVerifyChat(t, targetChat);
+      if (!opened.ok) return opened.message;
+    }
+    const header = await getChatHeader(t);
+    const r = await cdpEval(t, `(() => {
+      const containers = [...document.querySelectorAll('[data-testid="msg-container"]')];
+      const candidates = containers.filter((c) => c.querySelector('.message-in, .message-out, audio, [data-testid="audio-play"], [data-testid="audio-pause"], [aria-label="Play voice message"], [aria-label="Reproducir nota de voz"], [aria-label="Reproducir mensaje de voz"]'));
+      const c = candidates[candidates.length - 1];
+      if (!c) return null;
+      const outgoing = !!c.querySelector('.message-out, [data-icon="tail-out"]');
+      const quote = c.querySelector('[data-testid="quoted-message"], .quoted-mention, div[aria-label*="Quoted message" i]');
+      const preEls = [...c.querySelectorAll('[data-pre-plain-text]')];
+      const preEl = preEls.find((el) => !quote || !quote.contains(el)) || null;
+      const pre = (preEl && (preEl.getAttribute("data-pre-plain-text") || preEl.textContent || "")) || (c.hasAttribute("data-pre-plain-text") ? c.getAttribute("data-pre-plain-text") : "") || "";
+      const authorCandidates = [...c.querySelectorAll('[data-testid="author"], span[data-testid="author"]')];
+      const authorEl = authorCandidates.find((a) => !quote || !quote.contains(a));
+      let sender = "";
+      let timestamp = "";
+      if (pre) {
+        const open = pre.indexOf("[");
+        const close = pre.indexOf("]", open + 1);
+        const after = (close >= 0 ? pre.slice(close + 1) : pre).trim();
+        const colon = after.lastIndexOf(":");
+        if (colon > 0) sender = after.slice(0, colon).trim();
+        timestamp = (open >= 0 && close > open ? pre.slice(open + 1, close).trim() : "");
+      }
+      if (!timestamp) {
+        const meta = c.querySelector('[data-testid="msg-meta"]');
+        const metaText = meta ? (meta.innerText || meta.textContent || "") : "";
+        const mm = metaText.match(/(\\d{1,2}:\\d{2})/);
+        if (mm) timestamp = mm[1];
+      }
+      if (!sender && authorEl) sender = (authorEl.textContent || "").trim();
+      if (!sender) sender = outgoing ? "Yo" : "desconocido";
+      const quotedAuthorEl = quote && quote.querySelector('[data-testid="author"], span[data-testid="author"]');
+      const quotedSender = quotedAuthorEl ? (quotedAuthorEl.textContent || "").trim() : "";
+      const textParts = [...c.querySelectorAll('[data-testid="selectable-text"]')]
+        .filter((el) => !quote || !quote.contains(el))
+        .map((el) => (el.innerText || el.textContent || "").trim())
+        .filter(Boolean);
+      const text = textParts.join("\\n").trim();
+      const hasAudio = !!c.querySelector('audio, [data-testid="audio-play"], [data-testid="audio-pause"], [aria-label="Play voice message"], [aria-label="Reproducir nota de voz"], [aria-label="Reproducir mensaje de voz"]');
+      const hasImage = !!c.querySelector('img');
+      const dm = (c.innerText || "").match(/(\\d{1,2}):(\\d{2})(?!\\d)/);
+      const duration = dm ? parseInt(dm[1], 10) * 60 + parseInt(dm[2], 10) : null;
+      const type = hasAudio ? "audio" : text ? "text" : hasImage ? "image" : "other";
+      return { sender, timestamp, quotedSender, outgoing, type, text, duration };
+    })()`);
+    const m = r?.result?.value;
+    if (!m) return `No se encontraron mensajes en "${header || "el chat abierto"}".`;
+    const metaParts = [`chat="${header || "?"}"`, `type="${m.type}"`, `sender="${m.sender || "desconocido"}"`];
+    if (m.timestamp) metaParts.push(`time="${m.timestamp}"`);
+    if (m.quotedSender) metaParts.push(`replyTo="${m.quotedSender}"`);
+    if (m.type === "audio" && m.duration != null) metaParts.push(`duration="${Math.floor(m.duration / 60)}:${String(m.duration % 60).padStart(2, "0")}"`);
+    const body = m.type === "audio" && !m.text ? "[nota de voz; usá action=transcribe para transcribirla]" : m.text || "[sin texto visible]";
+    return `Último mensaje — ${metaParts.join(" | ")}\n${body}`;
   }
 
   if (action === "whatsapp-search") {
@@ -641,13 +802,23 @@ export async function browserTool(args, signal) {
   if (action === "whatsapp-extract-audio") {
     const t = pick();
     if (!t?.webSocketDebuggerUrl) return "Error: pestaña no encontrada (usá action:list primero)";
+    const targetChat = String(args.chatName || "").trim();
+    if (targetChat) {
+      const opened = await openAndVerifyChat(t, targetChat);
+      if (!opened.ok) return opened.message;
+    }
+    const senderFilter = String(args.sender || "").trim().toLowerCase();
     const index = Math.max(0, Number(args.index || 0));
-    const notes = await collectVoiceNotes(t);
-    if (!Array.isArray(notes) || !notes.length) return "No se encontraron notas de voz en el chat abierto.";
-    if (index >= notes.length) return `Solo hay ${notes.length} nota(s) de voz visibles; usá index entre 0 y ${notes.length - 1}.`;
-    const f = await resolveNoteAudio(t, notes[notes.length - 1 - index]);
+    const header = await getChatHeader(t);
+    let notes = await collectVoiceNotes(t);
+    if (!Array.isArray(notes) || !notes.length) return `No se encontraron notas de voz en "${header || "el chat abierto"}".`;
+    if (senderFilter) notes = notes.filter((n) => String(n.sender || "").toLowerCase().includes(senderFilter));
+    if (!notes.length) return `No se encontraron notas de voz de "${args.sender}" en "${header || "el chat abierto"}".`;
+    if (index >= notes.length) return `Solo hay ${notes.length} nota(s) de voz de "${args.sender || "cualquier persona"}" visibles; usá index entre 0 y ${notes.length - 1}.`;
+    const note = notes[notes.length - 1 - index];
+    const f = await resolveNoteAudio(t, note);
     if (!f) return "No se pudo obtener el audio (ni en caché de WhatsApp ni reproduciéndolo).";
-    return JSON.stringify(f);
+    return JSON.stringify({ ...f, chat: header || null, sender: note.sender || null, timestamp: note.timestamp || null, replyTo: note.quotedSender || null });
   }
 
   if (action === "whatsapp-scroll") {
@@ -658,5 +829,5 @@ export async function browserTool(args, signal) {
     return `Scroll ${dy > 0 ? "↓" : "↑"} ${Math.abs(dy)}px`;
   }
 
-  return `Error: acción desconocida "${action}". Usá list|activate|close|close-by-pattern|navigate|reload|scroll|extract-text|inspect|snapshot|click|fill|send|whatsapp-chat|whatsapp-send-to|whatsapp-send|whatsapp-transcribe|whatsapp-list|whatsapp-read|whatsapp-search|whatsapp-status|whatsapp-extract-audio|whatsapp-scroll.`;
+  return `Error: acción desconocida "${action}". Usá list|activate|close|close-by-pattern|navigate|reload|scroll|extract-text|inspect|snapshot|click|fill|send|whatsapp-chat|whatsapp-send-to|whatsapp-send|whatsapp-transcribe|whatsapp-list|whatsapp-read|whatsapp-read-last|whatsapp-search|whatsapp-status|whatsapp-extract-audio|whatsapp-scroll.`;
 }

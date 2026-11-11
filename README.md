@@ -61,7 +61,7 @@ Coding agent with tabs, persistent context, image support and **Agent Skills (st
 - **Sharing (v0.6.0)**: 📤 next to ⚙️ exports the active tab as a ZIP (`*.md` + `*.json` + `assets/`).
 - **Model scoring (v0.6.0)**: every model carries a jack-of-all-trades score (heuristic by family, no external API). The dropdown shows it inline per cap, sorted best-first, and new tabs default to the best balance.
 - **Browser (v0.7.0)**: `browser` tool (CDP against Brave with `--remote-debugging-port=9222`).
-- **WhatsApp Web (v0.8.0)**: `whatsapp_web` — one tool for all WhatsApp Web automation (`list`/`open`/`read`/`send`/`send-to`/`search`/`scroll`/`status`/`transcribe`/`extract-audio`). Voice notes are transcribed to text (free, up to 5/hour and 80 s of audio, via SpeakApp — the audio is sent to a third party). See CHANGELOG `0.8.0`.
+- **WhatsApp Web (v0.8.1)**: `whatsapp_web` — one tool for all WhatsApp Web automation (`list`/`open`/`read`/`message`/`send`/`send-to`/`search`/`scroll`/`status`/`transcribe`/`extract-audio`; `read-last` remains as an alias). `message` reads the latest text or audio message (“mensaje” = text or audio; “audio” = audio only). Pass `chatName` to verify the exact chat before reading/transcribing; pass `sender` to filter by person (e.g. `Aarón`). Sends require `confirmed:true` after explicit user approval, otherwise the tool returns a preview without sending. Voice notes are transcribed to text (free, up to 5/hour and 80 s of audio, via SpeakApp — the audio is sent to a third party). Results include `chat`, `sender` and `time` for each note. See CHANGELOG `0.8.1`.
 
 ## Icon
 

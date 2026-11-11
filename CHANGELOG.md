@@ -4,6 +4,20 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/). V
 
 ---
 
+## [0.8.1] - 2026-11-10
+
+### Arreglado
+- **WhatsApp Web**: `send` y `send-to` ya no envían por defecto. Sin `confirmed:true` devuelven un preview con destino y texto exactos; el envío exige que el modelo pase `confirmed:true` solo tras aprobación explícita del usuario. `send-to` tampoco abre el chat en el preview.
+- **Target equivocado en notas de voz**: `transcribe`/`extract-audio` ahora aceptan `chatName` (abren y verifican el header del chat antes de operar) y `sender` (filtran por remitente, p. ej. `Aarón`). Cada nota devuelve metadata `chat`, `sender` y `time`, así el agente sabe quién habló y en qué grupo, en vez de adivinar el último audio global.
+- `read` también acepta `chatName`/`sender` y devuelve el remitente junto a cada mensaje (con el header del chat al principio).
+- **Citas/replies**: el remitente citado dentro de un mensaje citado ya no se confunde con quien envió el audio/mensaje; `read` y `transcribe` devuelven el remitente real y `replyTo` cuando el mensaje es una respuesta.
+- **Formato de transcripción**: la tool separa los metadatos con ` | ` y el skill fija un formato recomendado para que el modelo no concatene `sender` y `replyTo` (bug `YoA: Erick`).
+- **WhatsApp Web `message`**: nueva acción genérica para el último mensaje visible (texto o audio). Reporta `type`, `sender`, `time`, `replyTo`; si es audio, indica usar `transcribe`. Mantener alias compatible `read-last`. "Mensaje" significa texto o audio; "audio" significa solo nota de voz.
+- **Aviso sonoro configurable**: Configuración > "Volumen de notificación" (0-100, por defecto 70). 0 silencia el aviso; al soltar el slider suena una prueba. El tono solo suena cuando termina una respuesta y la ventana no tiene foco.
+- Skill `whatsapp-web` reforzado: confirmación obligatoria antes de enviar, prohibido reenviar vía `click`, usar `sender` para "quién dijo" y siempre pasar `chatName` cuando el usuario nombra un chat.
+
+---
+
 ## [0.8.0] - 2026-11-10
 
 ### Añadido

@@ -532,6 +532,27 @@ function createConfigPanel() {
   skillsGroup.append(skillsLabel, skillsHint, skillsPath, skillsBtns);
   window.loom.getSkillsDirs?.().then((d) => { if (d?.user) skillsPath.textContent = d.user; }).catch(() => {});
 
+  // Volumen de notificación: slider con prueba al soltarlo. 0 = silencio.
+  const soundGroup = el("div", { style: "display: flex; flex-direction: column; gap: 8px;" });
+  const soundLabel = el("label", { text: t("notificationVolume") || "Notification volume", style: "font-size: 14px; color: var(--text);" });
+  const soundHint = el("p", {
+    text: t("notificationVolumeHint") || "0 = silent · 100 = max. Release the slider to hear the test sound.",
+    style: "font-size: 12px; color: var(--muted); margin: 0;",
+  });
+  const soundRow = el("div", { style: "display: flex; align-items: center; gap: 12px;" });
+  const initialVolume = getNotifyVolume();
+  const soundSlider = el("input", { type: "range", min: 0, max: 100, step: 1, value: initialVolume, style: "flex: 1; accent-color: var(--blue); cursor: pointer;" });
+  const soundValue = el("span", { text: `${initialVolume}%`, style: "width: 42px; text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums;" });
+  soundSlider.oninput = () => { soundValue.textContent = `${soundSlider.value}%`; };
+  soundSlider.onchange = () => {
+    const v = Math.max(0, Math.min(100, Number(soundSlider.value) || 0));
+    localStorage.setItem("loomNotifyVolume", String(v));
+    soundValue.textContent = `${v}%`;
+    playCompletionTone(true);
+  };
+  soundRow.append(el("span", { text: "🔔", style: "font-size: 16px;" }), soundSlider, soundValue);
+  soundGroup.append(soundLabel, soundHint, soundRow);
+
   // Idioma
   const langGroup = el("div", { style: "display: flex; flex-direction: column; gap: 8px;" });
   const langLabel = el("label", { text: t("language"), style: "font-size: 14px; color: var(--text);" });
@@ -554,6 +575,8 @@ function createConfigPanel() {
     skillsHint.textContent = t("skillsHint") || "Tus skills de usuario viven fuera del .exe. Creá una carpeta por skill con su SKILL.md y reiniciá Loom.";
     openSkillsBtn.textContent = t("openSkillsFolder") || "📁 Abrir carpeta de skills";
     reloadSkillsBtn.textContent = t("reloadSkills") || "↻ Recargar skills";
+    soundLabel.textContent = t("notificationVolume") || "Notification volume";
+    soundHint.textContent = t("notificationVolumeHint") || "0 = silent · 100 = max. Release the slider to hear the test sound.";
     btnClose.textContent = t("ready");
   };
   langGroup.append(langLabel, langSelect);
@@ -565,7 +588,7 @@ function createConfigPanel() {
   });
   btnClose.onclick = () => { hideConfigPanel(); setStatus(t("ready")); };
 
-  div.append(h2, desc, keysGroup, skillsGroup, langGroup, btnClose);
+  div.append(h2, desc, keysGroup, skillsGroup, soundGroup, langGroup, btnClose);
 
   configPanelEl = div;
   return div;
@@ -857,6 +880,45 @@ input.addEventListener("keydown", (e) => {
   else if (e.key === "Escape" && activeTab()?.busy) { e.preventDefault(); stopActive(); }
 });
 
+// Aviso sonoro suave al terminar: solo si la ventana no tiene el foco. El volumen se ajusta en Configuración (0-100).
+const DEFAULT_NOTIFY_VOLUME = 70;
+const MAX_NOTIFY_GAIN = 0.16;
+const getNotifyVolume = () => {
+  const raw = Number(localStorage.getItem("loomNotifyVolume"));
+  if (Number.isFinite(raw)) return Math.max(0, Math.min(100, raw));
+  const migratedOff = localStorage.getItem("loomCompletionSound") === "0";
+  const initial = migratedOff ? 0 : DEFAULT_NOTIFY_VOLUME;
+  localStorage.setItem("loomNotifyVolume", String(initial));
+  return initial;
+};
+const notifyGain = (volume) => (Math.max(0, Math.min(100, volume)) / 100) * MAX_NOTIFY_GAIN;
+function playCompletionTone(force = false) {
+  const gainTarget = notifyGain(getNotifyVolume());
+  if (gainTarget <= 0 || (!force && document.hasFocus() && document.visibilityState === "visible")) return;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const notes = [587.33, 783.99]; // re5 -> sol5, sine
+    const start = ctx.currentTime + 0.01;
+    notes.forEach((freq, i) => {
+      const at = start + i * 0.22;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, at);
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(gainTarget, at + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.19);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(at);
+      osc.stop(at + 0.2);
+    });
+    window.setTimeout(() => ctx.close().catch(() => {}), 700);
+  } catch { /* sin sonido: no es crítica */ }
+}
+
 // ------------------------------------------------------------ eventos del proceso principal (todos traen tabId)
 window.loom.onTabUpdated((info) => {
   const t = tabs.get(info.id);
@@ -872,6 +934,7 @@ window.loom.onAssistantMessage(({ tabId, text }) => {
   if (!t) return;
   addMessage(t, "assistant", text);
   if (tabId !== activeId) { t.unread = true; renderTabs(); } else setStatus("Listo");
+  playCompletionTone();
 });
 
 // Pasos del agente: la barra de actividad muestra el paso actual; el chat guarda el registro (con "Detalle de pasos").

@@ -9,6 +9,8 @@ const ACTIONS = {
   list: "whatsapp-list",
   open: "whatsapp-chat",
   read: "whatsapp-read",
+  message: "whatsapp-read-last",
+  "read-last": "whatsapp-read-last",
   send: "whatsapp-send",
   "send-to": "whatsapp-send-to",
   transcribe: "whatsapp-transcribe",
