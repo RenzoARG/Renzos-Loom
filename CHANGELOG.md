@@ -4,7 +4,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/). V
 
 ---
 
-## [0.8.1] - 2026-11-10
+## [0.8.1] - 2026-11-12
 
 ### Arreglado
 - **WhatsApp Web**: `send` y `send-to` ya no envían por defecto. Sin `confirmed:true` devuelven un preview con destino y texto exactos; el envío exige que el modelo pase `confirmed:true` solo tras aprobación explícita del usuario. `send-to` tampoco abre el chat en el preview.
