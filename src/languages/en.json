@@ -41,7 +41,7 @@
   "addKey": "Add key",
   "noKeys": "No API keys yet. Add one to use models.",
   "endpoint": "Endpoint (Base URL)",
-  "customProviderName": "Provider name (optional)",
+  "customProviderName": "Provider display name",
   "test": "Test",
   "cancel": "Cancel",
   "deleteKey": "Delete key",

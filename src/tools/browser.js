@@ -829,5 +829,34 @@ export async function browserTool(args, signal) {
     return `Scroll ${dy > 0 ? "↓" : "↑"} ${Math.abs(dy)}px`;
   }
 
-  return `Error: acción desconocida "${action}". Usá list|activate|close|close-by-pattern|navigate|reload|scroll|extract-text|inspect|snapshot|click|fill|send|whatsapp-chat|whatsapp-send-to|whatsapp-send|whatsapp-transcribe|whatsapp-list|whatsapp-read|whatsapp-read-last|whatsapp-search|whatsapp-status|whatsapp-extract-audio|whatsapp-scroll.`;
+  if (action === "eval" || action === "console") {
+    const t = pick();
+    if (!t?.webSocketDebuggerUrl) return "Error: pestaña no encontrada (usá action:list primero)";
+    const expr = String(args.expression || args.code || args.expr || "").trim();
+    if (!expr) return "Error: falta expression (JS a ejecutar)";
+    if (!isConfirmed(args)) {
+      return `No ejecutado. Preview para "${t.title}":\n${expr}\nPara ejecutar, pedile confirmación explícita al usuario y volvé a llamar con confirmed:true.`;
+    }
+    const r = await cdpEval(t, expr);
+    const details = r?.exceptionDetails;
+    if (details) {
+      return `Error en eval (${t.title}): ${details.exception?.description || details.text || JSON.stringify(details)}`;
+    }
+    const result = r?.result;
+    if (!result) return `Eval OK (${t.title})\n(sin valor)`;
+    let out;
+    try {
+      out = JSON.stringify(result.value, null, 2);
+    } catch (e) {
+      out = null;
+    }
+    if (out === undefined) {
+      out = `[${result.type}${result.subtype ? "/" + result.subtype : ""}${result.description ? ": " + result.description : result.unserializableValue ? ": " + result.unserializableValue : ""}]`;
+    }
+    const MAX = 4000;
+    if (out.length > MAX) out = out.slice(0, MAX) + `\n… [truncado ${out.length} caracteres]`;
+    return `Eval OK (${t.title})\n${out}`;
+  }
+
+  return `Error: acción desconocida "${action}". Usá list|activate|close|close-by-pattern|navigate|reload|scroll|extract-text|inspect|snapshot|click|fill|send|whatsapp-chat|whatsapp-send-to|whatsapp-send|whatsapp-transcribe|whatsapp-list|whatsapp-read|whatsapp-read-last|whatsapp-search|whatsapp-status|whatsapp-extract-audio|whatsapp-scroll|eval|console.`;
 }

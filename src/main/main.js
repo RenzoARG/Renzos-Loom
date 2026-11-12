@@ -59,7 +59,7 @@ function maskKey(key) {
 function apiKeySummary(e) {
   return {
     id: e.id, provider: e.provider || "Personalizado", providerId: e.providerId || "custom",
-    baseURL: e.baseURL || "", keyTail: maskKey(e.key), status: keyStatus[e.id] || { estado: "untested" },
+    baseURL: e.baseURL || "", keyTail: maskKey(e.key), free: !!e.free, status: keyStatus[e.id] || { estado: "untested" },
   };
 }
 
@@ -68,7 +68,7 @@ function saveApiKeys() {
   try {
     fs.mkdirSync(SESSIONS_DIR, { recursive: true });
     const tmp = KEYS_FILE + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(apiKeys.map(({ id, providerId, baseURL, key }) => ({ id, providerId, baseURL, key })), null, 2));
+    fs.writeFileSync(tmp, JSON.stringify(apiKeys.map(({ id, provider, providerId, baseURL, key, free }) => ({ id, provider, providerId, baseURL, key, free: !!free })), null, 2));
     fs.renameSync(tmp, KEYS_FILE);
   } catch (e) { console.error("saveApiKeys:", e.message); }
 }
@@ -83,10 +83,11 @@ function loadApiKeys() {
           const providerId = a.providerId || "custom";
           apiKeys.push({
             id: a.id || newId(),
-            provider: PROVIDER_PRESETS[providerId]?.label || "Personalizado",
+            provider: (a.provider || PROVIDER_PRESETS[providerId]?.label || "Personalizado").toString(),
             providerId,
             baseURL: a.baseURL || PROVIDER_PRESETS[providerId]?.baseURL || "",
             key: a.key,
+            free: !!a.free,
           });
         }
       }
@@ -185,7 +186,7 @@ async function getAvailableModels(force = false) {
         const inputs = m.architecture?.input_modalities
           ?? m.architecture?.modality?.split("->")[0].split("+")
           ?? ["text"];
-        const free = Number(m.pricing?.prompt) === 0 && Number(m.pricing?.completion) === 0;
+        const free = !!entry.free || (Number(m.pricing?.prompt) === 0 && Number(m.pricing?.completion) === 0);
         const info = {
           id: m.id,
           name: m.name,
@@ -201,9 +202,9 @@ async function getAvailableModels(force = false) {
           providerId: entry.providerId || "custom",
         };
         info.caps = ["🔧", info.vision && "👁️", info.audio && "🎤", info.files && "📄", info.reasoning && "🧠", info.web && "🌐", free && "💰"].filter(Boolean).join(" ");
-        // Si dos llaves exponen el mismo modelo, preferimos la de contexto mayor; en empate, la primera.
-        const prev = byId.get(info.id);
-        if (!prev || info.context > (prev.context || 0)) byId.set(info.id, info);
+        // Un modelo puede venir de varios proveedores: se muestran todos, con choiceId único.
+        info.choiceId = `${info.id}@@${entry.id}`;
+        byId.set(`${entry.id}:${info.id}`, info);
       }
     } catch (e) {
       console.error(`getAvailableModels (${entry.provider}):`, e.message);
@@ -263,8 +264,10 @@ async function getAvailableModels(force = false) {
   return modelsCache;
 }
 
-function keyForModel(modelId) {
-  const info = modelsCache.find((m) => m.id === modelId);
+function keyForModel(modelId, preferredKeyId = null) {
+  const info = (preferredKeyId
+    ? modelsCache.find((m) => m.id === modelId && m.keyId === preferredKeyId)
+    : null) || modelsCache.find((m) => m.id === modelId);
   if (info?.keyId) {
     const entry = apiKeys.find((e) => e.id === info.keyId);
     if (entry && clients.has(entry.id)) return { client: clients.get(entry.id), entry };
@@ -361,10 +364,11 @@ function toUiMessages(history) {
 }
 
 // ---------------------------------------------------------------- pestañas
-function makeTab({ id = newId(), name = DEFAULT_TAB_NAME, autoName = true, model, createdAt = Date.now(), history } = {}) {
+function makeTab({ id = newId(), name = DEFAULT_TAB_NAME, autoName = true, model, modelKeyId = null, createdAt = Date.now(), history } = {}) {
   const tab = {
     id, name, autoName, createdAt,
     model: model || defaultModel,
+    modelKeyId,
     history: history ?? [{ role: "system", content: buildSystemPrompt() }],
     busy: false, closed: false, pendingHandoff: null, usage: null, stopped: false, abort: null,
   };
@@ -398,7 +402,7 @@ function tabCtx(tab) {
   return { ctx: estimateTokens(tab.history), ctxReal: false };
 }
 
-const tabInfo = (t) => ({ id: t.id, name: t.name, model: t.model, busy: t.busy, ...tabCtx(t) });
+const tabInfo = (t) => ({ id: t.id, name: t.name, model: t.model, modelKeyId: t.modelKeyId || null, busy: t.busy, ...tabCtx(t) });
 const tabPayload = (t) => ({ ...tabInfo(t), messages: toUiMessages(t.history) });
 
 // Las pestañas vacías no se guardan: no ensucian la carpeta sessions/.
@@ -480,7 +484,7 @@ ipcMain.handle("get-state", () => ({ active: activeId, tabs: openIds.map((id) =>
 
 ipcMain.handle("new-tab", (event, fromId) => {
   const base = tabs.get(fromId) || tabs.get(activeId);
-  const tab = makeTab({ model: base?.model });
+  const tab = makeTab({ model: base?.model, modelKeyId: base?.modelKeyId });
   openIds.push(tab.id);
   activeId = tab.id;
   persistWorkspace();
@@ -505,7 +509,7 @@ ipcMain.handle("close-tab", (event, id) => {
   const idx = openIds.indexOf(id);
   openIds.splice(idx, 1);
   let created = null;
-  if (!openIds.length) { const t = makeTab({ model: tab.model }); openIds.push(t.id); created = tabPayload(t); }
+  if (!openIds.length) { const t = makeTab({ model: tab.model, modelKeyId: tab.modelKeyId }); openIds.push(t.id); created = tabPayload(t); }
   if (activeId === id || !tabs.has(activeId)) activeId = openIds[Math.min(idx, openIds.length - 1)];
   persistWorkspace();
   return { active: activeId, created };
@@ -519,13 +523,17 @@ ipcMain.handle("rename-tab", (event, id, name) => {
   return tab.name;
 });
 
-ipcMain.handle("set-model", (event, id, modelId) => {
+ipcMain.handle("set-model", (event, id, modelId, keyId = null) => {
   const tab = tabs.get(id);
   if (!tab) return null;
   const oldModel = tab.model;
-  const changed = oldModel !== modelId;
+  const previousKeyId = tab.modelKeyId || null;
+  const candidate = (keyId ? modelsCache.find((m) => m.id === modelId && m.keyId === keyId) : null) || modelsCache.find((m) => m.id === modelId) || null;
+  const selectedKeyId = candidate?.keyId || null;
+  const changed = oldModel !== modelId || previousKeyId !== selectedKeyId;
   const hasConversation = tab.history.some((m) => m.role === "user");
   tab.model = defaultModel = modelId; // las pestañas nuevas heredan el último modelo elegido
+  tab.modelKeyId = selectedKeyId;
   let handoffNote = null;
   if (changed && hasConversation) {
     handoffNote = `🔄 Cambio de agente: la conversación anterior la sostuvo "${oldModel}". A partir de ahora la sostenés vos ("${modelId}"). Revisá el historial y continuá sin repetir información ya dada.`;
@@ -533,7 +541,7 @@ ipcMain.handle("set-model", (event, id, modelId) => {
     tab.pendingHandoff = { from: oldModel, to: modelId };
   }
   persistTab(tab);
-  return { model: tab.model, handoffNote, ...tabCtx(tab) };
+  return { model: tab.model, modelKeyId: tab.modelKeyId, handoffNote, ...tabCtx(tab) };
 });
 
 ipcMain.handle("list-saved", () => listConversations().filter((c) => !tabs.has(c.id)));
@@ -572,7 +580,7 @@ ipcMain.handle("share-tab", async (event, id) => {
 
   const safeName = String(tab.name || "conversacion").replace(/[\\/:*?"<>|\0]/g, "_").replace(/\s+/g, "-").slice(0, 60) || "conversacion";
   const dateStr = new Date().toISOString().slice(0, 10);
-  const picked = keyForModel(tab.model);
+  const picked = keyForModel(tab.model, tab.modelKeyId);
   const provider = picked?.entry?.provider || "desconocido";
 
   // Transcript legible en Markdown
@@ -684,7 +692,7 @@ ipcMain.handle("set-api-key", (event, key) => {
 });
 
 ipcMain.handle("list-api-keys", () => apiKeys.map(apiKeySummary));
-ipcMain.handle("add-api-key", (event, { providerId, provider, baseURL, key }) => {
+ipcMain.handle("add-api-key", (event, { providerId, provider, baseURL, key, free }) => {
   const pid = PROVIDER_PRESETS[providerId] ? providerId : "custom";
   const entry = {
     id: newId(),
@@ -692,6 +700,7 @@ ipcMain.handle("add-api-key", (event, { providerId, provider, baseURL, key }) =>
     providerId: pid,
     baseURL: (baseURL || PROVIDER_PRESETS[pid]?.baseURL || "").trim(),
     key: (key || "").trim(),
+    free: !!free,
   };
   if (!entry.key) return { ok: false, error: "Falta la API key" };
   apiKeys.push(entry);
@@ -701,6 +710,14 @@ ipcMain.handle("add-api-key", (event, { providerId, provider, baseURL, key }) =>
   keyStatus[entry.id] = { estado: "untested" };
   void getAvailableModels(true);
   return { ok: true, entry: apiKeySummary(entry) };
+});
+ipcMain.handle("set-api-key-free", (event, id, free) => {
+  const entry = apiKeys.find((e) => e.id === id);
+  if (!entry) return { ok: false };
+  entry.free = !!free;
+  saveApiKeys();
+  void getAvailableModels(true);
+  return { ok: true, free: entry.free };
 });
 ipcMain.handle("delete-api-key", (event, id) => {
   const idx = apiKeys.findIndex((e) => e.id === id);
@@ -748,7 +765,7 @@ async function callModel(tab, step) {
   for (let attempt = 1; ; attempt++) {
     const started = Date.now();
     try {
-      const picked = keyForModel(tab.model);
+      const picked = keyForModel(tab.model, tab.modelKeyId);
       if (!picked?.client) { const e = new Error("No hay API Key configurada. Abrí Configuración (⚙️) y agregá una llave."); e.status = 401; throw e; }
       const resp = await picked.client.chat.completions.create(
         { model: tab.model, messages: historyForModel(tab), tools },

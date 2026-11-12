@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld("loom", {
   setApiKey: call("set-api-key"),
   listApiKeys: call("list-api-keys"),
   addApiKey: call("add-api-key"),
+  setApiKeyFree: call("set-api-key-free"),
   deleteApiKey: call("delete-api-key"),
   testApiKey: call("test-api-key"),
   stopTab: call("stop-tab"),

@@ -41,7 +41,7 @@
   "addKey": "Agregar llave",
   "noKeys": "Todavía no hay llaves. Agregá una para usar modelos.",
   "endpoint": "Endpoint (Base URL)",
-  "customProviderName": "Nombre del proveedor (opcional)",
+  "customProviderName": "Nombre visible del proveedor",
   "test": "Probar",
   "cancel": "Cancelar",
   "deleteKey": "Borrar llave",

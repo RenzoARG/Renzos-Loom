@@ -333,6 +333,8 @@ const PROVIDER_PRESETS = {
   google: { label: "Google (Gemini)", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/" },
   xai: { label: "xAI (Grok)", baseURL: "https://api.x.ai/v1" },
   deepseek: { label: "DeepSeek", baseURL: "https://api.deepseek.com/v1" },
+  aion: { label: "Aion Labs", baseURL: "https://api.aionlabs.ai/v1" },
+  cohere: { label: "Cohere", baseURL: "https://api.cohere.ai/compatibility/v1" },
   groq: { label: "Groq", baseURL: "https://api.groq.com/openai/v1" },
   together: { label: "Together AI", baseURL: "https://api.together.xyz/v1" },
   mistral: { label: "Mistral", baseURL: "https://api.mistral.ai/v1" },
@@ -391,9 +393,9 @@ function createConfigPanel() {
     const opt = el("option", { value: id, text: preset.label });
     providerSelect.appendChild(opt);
   }
-  const customProviderInput = el("input", {
-    placeholder: t("customProviderName") || "Nombre del proveedor (opcional)",
-    style: "display: none; padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 13px;",
+  const providerNameInput = el("input", {
+    placeholder: t("customProviderName") || "Nombre visible del proveedor",
+    style: "padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 13px;",
   });
   const baseUrlInput = el("input", {
     placeholder: t("endpoint") || "Endpoint (Base URL)",
@@ -403,6 +405,11 @@ function createConfigPanel() {
     type: "password", placeholder: t("apiKeyPlaceholder") || "sk-...",
     style: "padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 13px;",
   });
+  const freeKeyCheckbox = el("input", { type: "checkbox", style: "width: 14px; height: 14px; accent-color: var(--blue);" });
+  const freeKeyLabel = el("label", { style: "display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;" }, [
+    freeKeyCheckbox,
+    el("span", { text: "Los modelos de esta key entran en mi plan/trial gratuito (marcarlos como free)", style: "font-size: 12px; color: var(--text);" }),
+  ]);
   const editorStatus = el("p", { style: "font-size: 12px; color: var(--muted); min-height: 16px; margin: 0;" });
   const editorBtns = el("div", { style: "display: flex; gap: 8px;" });
   const saveBtn = el("button", {
@@ -414,13 +421,14 @@ function createConfigPanel() {
     style: "padding: 8px 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; font-size: 13px;",
   });
   editorBtns.append(saveBtn, cancelBtn);
-  editor.append(providerSelect, customProviderInput, baseUrlInput, keyInput, editorStatus, editorBtns);
+  editor.append(providerSelect, providerNameInput, baseUrlInput, keyInput, freeKeyLabel, editorStatus, editorBtns);
   keysGroup.appendChild(editor);
 
   providerSelect.onchange = () => {
     const preset = PROVIDER_PRESETS[providerSelect.value];
     baseUrlInput.value = preset?.baseURL || "";
-    customProviderInput.style.display = providerSelect.value === "custom" ? "block" : "none";
+    providerNameInput.value = providerSelect.value === "custom" ? "" : (preset?.label || "");
+    providerNameInput.style.display = "block";
     editorStatus.textContent = "";
   };
   addBtn.onclick = () => {
@@ -429,6 +437,7 @@ function createConfigPanel() {
     providerSelect.value = "openrouter";
     providerSelect.onchange();
     keyInput.value = "";
+    freeKeyCheckbox.checked = false;
     editorStatus.textContent = "";
     keyInput.focus();
   };
@@ -441,8 +450,8 @@ function createConfigPanel() {
     if (!key) { editorStatus.textContent = t("invalidApiKey") || "Falta la API key"; editorStatus.style.color = "#ff8a8a"; return; }
     if (!baseUrlInput.value.trim()) { editorStatus.textContent = t("needEndpoint") || "Falta el endpoint"; editorStatus.style.color = "#ff8a8a"; return; }
     const providerId = providerSelect.value;
-    const provider = providerId === "custom" ? customProviderInput.value.trim() || PROVIDER_PRESETS.custom.label : PROVIDER_PRESETS[providerId].label;
-    const res = await window.loom.addApiKey({ providerId, provider, baseURL: baseUrlInput.value.trim(), key });
+    const provider = providerNameInput.value.trim() || PROVIDER_PRESETS[providerId]?.label || PROVIDER_PRESETS.custom.label;
+    const res = await window.loom.addApiKey({ providerId, provider, baseURL: baseUrlInput.value.trim(), key, free: freeKeyCheckbox.checked });
     if (!res?.ok) { editorStatus.textContent = res?.error || "No se pudo guardar"; editorStatus.style.color = "#ff8a8a"; return; }
     editorStatus.textContent = t("saved") || "Saved";
     editorStatus.style.color = "var(--muted)";
@@ -467,10 +476,21 @@ function createConfigPanel() {
       const dot = el("span", { style: `width: 8px; height: 8px; border-radius: 50%; background: ${dotColor}; flex-shrink: 0;`, title: stText });
       const info = el("div", { style: "flex: 1; min-width: 0;" });
       info.append(
-        el("div", { text: e.provider, style: "font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" }),
+        el("div", { text: `${e.provider}${e.free ? " · free tier" : ""}`, style: "font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" }),
         el("div", { text: `${e.baseURL} · ${e.keyTail}`, style: "font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" }),
         el("div", { text: stText, style: "font-size: 11px; color: var(--muted);" }),
       );
+      const freeBtn = el("button", {
+        text: e.free ? "💰" : "＄",
+        title: e.free ? "Quitar marca free tier" : "Marcar como free tier",
+        style: `padding: 5px 10px; border: 1px solid ${e.free ? "#3b5b23" : "var(--line)"}; border-radius: 5px; background: ${e.free ? "#172510" : "var(--panel)"}; color: ${e.free ? "#9be36b" : "var(--muted)"}; cursor: pointer; font-size: 11px;`,
+      });
+      freeBtn.onclick = async () => {
+        freeBtn.disabled = true;
+        await window.loom.setApiKeyFree(e.id, !e.free);
+        await refreshModels();
+        await renderKeysList();
+      };
       const testBtn = el("button", {
         text: t("test") || "Test",
         style: "padding: 5px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--text); cursor: pointer; font-size: 11px;",
@@ -493,7 +513,7 @@ function createConfigPanel() {
         await refreshModels();
         await renderKeysList();
       };
-      row.append(dot, info, testBtn, delBtn);
+      row.append(dot, info, freeBtn, testBtn, delBtn);
       keysList.appendChild(row);
     }
   }
@@ -624,6 +644,8 @@ function hideConfigPanel() {
   if (configPanelEl) configPanelEl.style.display = "none";
   $("input-bar")?.style.removeProperty("display");
   $("attachments")?.style.removeProperty("display");
+  // "Ready" también actualiza la lista de modelos y filtros (no todos los cambios pasan por "Guardar").
+  void refreshModels().catch((e) => console.warn("refreshModels al cerrar Configuración:", e?.message || e));
 }
 
 $("new-tab").addEventListener("click", newTab);
@@ -637,13 +659,20 @@ window.loom.onShortcut((action) => {
 
 // ------------------------------------------------------------ modelos (por pestaña)
 const PROVIDER_FILTER_KEY = "loomProviderFilters";
+const PROVIDER_KNOWN_KEY = "loomKnownProviderIds";
 let providerEnabled = new Set(); // vacío = todos visibles
+let knownProviderIds = new Set();
 try {
   const saved = JSON.parse(localStorage.getItem(PROVIDER_FILTER_KEY) || "null");
   if (Array.isArray(saved)) providerEnabled = new Set(saved);
 } catch { /* sin filtros de proveedor guardados */ }
+try {
+  const savedKnown = JSON.parse(localStorage.getItem(PROVIDER_KNOWN_KEY) || "null");
+  if (Array.isArray(savedKnown)) knownProviderIds = new Set(savedKnown);
+} catch { /* ids desconocidos */ }
 function saveProviderFilters() {
   localStorage.setItem(PROVIDER_FILTER_KEY, JSON.stringify([...providerEnabled]));
+  localStorage.setItem(PROVIDER_KNOWN_KEY, JSON.stringify([...knownProviderIds]));
 }
 
 const visibleModels = () => allModels.filter((m) => {
@@ -661,6 +690,21 @@ function providerGroups(models) {
   return [...map.values()];
 }
 
+function reconcileProviderFilters(seen) {
+  const seenIds = new Set(seen.map((p) => p.id));
+  providerEnabled = new Set([...providerEnabled].filter((id) => seenIds.has(id)));
+  knownProviderIds = new Set([...knownProviderIds].filter((id) => seenIds.has(id)));
+  if (!knownProviderIds.size && providerEnabled.size) {
+    // Migración: la selección vieja son los proveedores conocidos; todo lo nuevo se habilita solo.
+    knownProviderIds = new Set(providerEnabled);
+    for (const p of seen) if (!knownProviderIds.has(p.id)) providerEnabled.add(p.id);
+  } else {
+    // Un proveedor recién agregado (o reaparecido) debe verse; no queda oculto por un filtro viejo.
+    for (const p of seen) if (!knownProviderIds.has(p.id) && providerEnabled.size) providerEnabled.add(p.id);
+  }
+  knownProviderIds = new Set(seenIds);
+  saveProviderFilters();
+}
 function renderProviderFilters() {
   const container = $("provider-filters");
   container.innerHTML = "";
@@ -670,6 +714,7 @@ function renderProviderFilters() {
     if (!seenMap.has(id)) seenMap.set(id, m.provider || m.providerId || "Otros");
   }
   const seen = [...seenMap.entries()].map(([id, label]) => ({ id, label }));
+  reconcileProviderFilters(seen);
   for (const p of seen) {
     const label = document.createElement("label");
     label.className = "chk";
@@ -696,11 +741,17 @@ function renderProviderFilters() {
   }
 }
 
+function findCurrentModel(t, models = allModels) {
+  if (!t) return null;
+  return models.find((m) => m.id === t.model && (!t.modelKeyId || m.keyId === t.modelKeyId))
+    || models.find((m) => m.id === t.model)
+    || null;
+}
 function renderModelOptions() {
   const t = activeTab();
   const list = visibleModels();
   // Si el modelo de la pestaña quedó fuera del filtro, igual lo mostramos para que el select diga la verdad.
-  const current = allModels.find((m) => m.id === t?.model);
+  const current = findCurrentModel(t);
   const shown = current && !list.includes(current) ? [current, ...list] : list;
   modelSelect.innerHTML = "";
   if (t && !current) { // modelo que no está en la lista (ej. una pestaña vieja guardada)
@@ -712,10 +763,10 @@ function renderModelOptions() {
   const groups = providerGroups(shown);
   for (const g of groups) {
     const og = document.createElement("optgroup");
-    og.label = g.label || "Otros";
+    og.label = `${g.label || "Otros"} · ${g.items.length} ${g.items.length === 1 ? "modelo" : "modelos"}`;
     for (const m of g.items.slice(0, 400)) {
       const opt = document.createElement("option");
-      opt.value = m.id;
+      opt.value = m.choiceId || m.id;
       // Dos líneas en el desplegable: caps con score arriba, modelo abajo (como pediste).
       const badge = m.capsBadge || m.caps || "";
       opt.textContent = `${badge}\n${m.id} (${Math.round(m.context / 1000)}k) ★${m.jack ?? ""}`;
@@ -723,23 +774,26 @@ function renderModelOptions() {
     }
     modelSelect.appendChild(og);
   }
-  if (t) modelSelect.value = t.model;
-  const currentInfo = allModels.find((m) => m.id === t?.model);
-  $("model-id").textContent = t ? `${t.model}${currentInfo?.provider ? " · " + currentInfo.provider : ""}` : "";
+  if (t) modelSelect.value = current?.choiceId || t.model;
+  $("model-id").textContent = t ? `${t.model}${current?.provider ? " · " + current.provider : ""}` : "";
   $("model-count").textContent = `(${list.length}/${allModels.length})`;
   updateCtx();
 }
 
-async function changeModel(id) {
+async function changeModel(choiceId) {
   const t = activeTab();
   if (!t) return;
-  const res = await window.loom.setModel(t.id, id);
-  const newModel = (res && res.model) || res || id;
+  const candidate = allModels.find((m) => m.choiceId === choiceId) || null;
+  const model = candidate?.id || choiceId;
+  const keyId = candidate?.keyId || null;
+  const res = await window.loom.setModel(t.id, model, keyId);
+  const newModel = (res && res.model) || res || model;
   t.model = newModel;
+  t.modelKeyId = res?.modelKeyId ?? keyId;
   if (res && res.handoffNote) addMessage(t, "system", res.handoffNote);
   if (res && typeof res.ctx === "number") { t.ctx = res.ctx; t.ctxReal = !!res.ctxReal; }
-  modelSelect.value = t.model;
-  $("model-id").textContent = t.model;
+  modelSelect.value = candidate?.choiceId || t.model;
+  $("model-id").textContent = `${t.model}${candidate?.provider ? " · " + candidate.provider : ""}`;
   updateCtx();
   renderTabs();
 }
@@ -923,7 +977,7 @@ function playCompletionTone(force = false) {
 window.loom.onTabUpdated((info) => {
   const t = tabs.get(info.id);
   if (!t) return;
-  Object.assign(t, { name: info.name, model: info.model, busy: info.busy, ctx: info.ctx, ctxReal: info.ctxReal });
+  Object.assign(t, { name: info.name, model: info.model, modelKeyId: info.modelKeyId || null, busy: info.busy, ctx: info.ctx, ctxReal: info.ctxReal });
   if (!info.busy) { t.activity = null; t.busySince = 0; t.stopping = false; }
   renderTabs();
   if (info.id === activeId) { updateSendState(); updateCtx(); renderActivity(); if (!info.busy && statusEl.textContent === "Pensando...") setStatus("Listo"); }

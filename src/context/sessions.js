@@ -67,7 +67,7 @@ function writeJsonAtomic(file, data) {
 }
 
 // ---------------------------------------------------------------- conversaciones
-// Formato: { version, id, name, model, autoName, createdAt, updatedAt, history }
+// Formato: { version, id, name, model, modelKeyId, autoName, createdAt, updatedAt, history }
 // También se leen las sesiones viejas (un array de mensajes): el nombre del archivo pasa a ser el título.
 export function saveConversation(conv) {
   ensureDir();
@@ -76,6 +76,7 @@ export function saveConversation(conv) {
     id: conv.id,
     name: conv.name,
     model: conv.model,
+    modelKeyId: conv.modelKeyId || null,
     autoName: !!conv.autoName,
     createdAt: conv.createdAt ?? Date.now(),
     updatedAt: Date.now(),
